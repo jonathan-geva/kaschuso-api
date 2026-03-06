@@ -96,6 +96,57 @@ async function authenticate(mandator, username, password) {
     return cookies;
 }
 
+function getAuthenticationFailureInfo(error) {
+    if (error && error.name === 'AuthenticationError') {
+        return {
+            reason: 'INVALID_CREDENTIALS',
+            detail: 'The upstream login did not accept the provided credentials.'
+        };
+    }
+
+    if (error && error.code === 'ECONNABORTED') {
+        return {
+            reason: 'UPSTREAM_TIMEOUT',
+            detail: 'The upstream login service did not respond in time.'
+        };
+    }
+
+    if (error && error.response && error.response.status) {
+        if (error.response.status === 403) {
+            return {
+                reason: 'UPSTREAM_FORBIDDEN',
+                detail: 'The upstream login service rejected the request.'
+            };
+        }
+
+        if (error.response.status >= 500) {
+            return {
+                reason: 'UPSTREAM_UNAVAILABLE',
+                detail: 'The upstream login service is currently unavailable.'
+            };
+        }
+    }
+
+    if (error && error.code && /^E(?:AI_AGAIN|HOSTUNREACH|NETUNREACH|CONNREFUSED|CONNRESET|PIPE)$/.test(error.code)) {
+        return {
+            reason: 'NETWORK_ERROR',
+            detail: 'A network error occurred while contacting the upstream login service.'
+        };
+    }
+
+    if (error && error.name === 'TypeError') {
+        return {
+            reason: 'UPSTREAM_RESPONSE_CHANGED',
+            detail: 'The upstream login page format could not be parsed.'
+        };
+    }
+
+    return {
+        reason: 'AUTHENTICATION_FAILED',
+        detail: 'Authentication failed for an unknown reason.'
+    };
+}
+
 function getCurrentRequestedPageFromHtml(html) {
     return cheerio.load(html)('input[name=currentRequestedPage]').attr('value');
 }
@@ -464,7 +515,7 @@ axios.interceptors.response.use((response) => {
     response.cookies = getCookiesFromHeaders(response.headers);
     return response;
 }, (error) => {
-    if (error.response.status === 302) {
+    if (error && error.response && error.response.status === 302) {
         const cookies = getCookiesFromHeaders(error.response.headers);
         const locationValue = error.response.headers.location;
         return Promise.resolve({error, cookies, locationValue});
@@ -474,6 +525,7 @@ axios.interceptors.response.use((response) => {
 
 module.exports = {
     authenticate,
+    getAuthenticationFailureInfo,
     getUserInfo,
     getGrades,
     getAbsences,

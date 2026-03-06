@@ -1,4 +1,4 @@
-const { authenticate } = require('../../services/kaschuso-api');
+const { authenticate, getAuthenticationFailureInfo } = require('../../services/kaschuso-api');
 
 var router = require('express').Router();
 
@@ -13,11 +13,14 @@ router.get('/', function(req, res, next) {
             username: username,
             authenticated: true
         });
-    }).catch(() => {
+    }).catch((error) => {
+        const failure = getAuthenticationFailureInfo(error);
         return res.status(422).json({
             mandator: mandator,
             username: username,
-            authenticated: false 
+            authenticated: false,
+            reason: failure.reason,
+            detail: failure.detail
         });
     });
 });

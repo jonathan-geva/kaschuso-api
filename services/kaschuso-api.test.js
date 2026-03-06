@@ -9,7 +9,8 @@ const {
     getGradesFromHtml,
     getUserInfoFromHtml,
     getCurrentRequestedPageFromHtml,
-    getActionFromSesJs
+    getActionFromSesJs,
+    getAuthenticationFailureInfo
 } = require('./kaschuso-api');
 
 test('extract cookies from header', () => {
@@ -217,4 +218,33 @@ test('get action from ses.js', async () => {
     const html = fs.readFileSync('./__test__/ses.js', 'utf8');
     expect(getActionFromSesJs(html))
     .toMatch(/^auth\?8C3C82CB56AE=[\da-f]{32}$/);
+});
+
+test('classify auth failure for invalid credentials', () => {
+    const error = new Error('username or password invalid');
+    error.name = 'AuthenticationError';
+
+    expect(getAuthenticationFailureInfo(error)).toEqual({
+        reason: 'INVALID_CREDENTIALS',
+        detail: 'The upstream login did not accept the provided credentials.'
+    });
+});
+
+test('classify auth failure for upstream timeout', () => {
+    const error = new Error('timeout');
+    error.code = 'ECONNABORTED';
+
+    expect(getAuthenticationFailureInfo(error)).toEqual({
+        reason: 'UPSTREAM_TIMEOUT',
+        detail: 'The upstream login service did not respond in time.'
+    });
+});
+
+test('classify auth failure for parse mismatch', () => {
+    const error = new TypeError('Cannot read properties of null');
+
+    expect(getAuthenticationFailureInfo(error)).toEqual({
+        reason: 'UPSTREAM_RESPONSE_CHANGED',
+        detail: 'The upstream login page format could not be parsed.'
+    });
 });
