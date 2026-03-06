@@ -28,6 +28,8 @@
 - Cheerio often normalizes `tbody`; prefer selectors that work with inserted table wrappers.
 
 ## Security And Logging
-- Credentials are currently passed via query params for compatibility; avoid adding logs that expose raw passwords.
+- Credentials must be accepted only via `POST /api/authenticate` JSON body (never via query params).
+- Protected endpoints must require bearer token auth and must reject credential query params.
+- Production deployments require explicit `JWT_SECRET` and `FRONTEND_ORIGIN` configuration.
 - Keep password redaction behavior in request logging intact.
 - Do not commit secrets or real user credentials into code, tests, or docs.

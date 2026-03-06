@@ -6,12 +6,38 @@ var express = require('express'),
     errorhandler = require('errorhandler'),
     morgan = require('morgan');
 
+var { globalRateLimit } = require('./routes/api/middleware/rate-limit');
+
 var isProduction = process.env.NODE_ENV === 'production';
 
 // Create global app object
 var app = express();
 
-app.use(cors());
+var corsOptions = {
+    origin: process.env.FRONTEND_ORIGIN || false,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+if (!process.env.FRONTEND_ORIGIN && !isProduction) {
+    corsOptions.origin = true;
+}
+
+app.use(cors(corsOptions));
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+app.use(function(req, res, next) {
+    // Baseline response headers for public API exposure.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+
+    if (isProduction) {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+});
 
 // Normal express config defaults
 morgan.token('url', function (req, res) { 
@@ -21,6 +47,7 @@ morgan.token('url', function (req, res) {
 app.use(morgan('dev'));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use(globalRateLimit);
 
 app.use(require('method-override')());
 
@@ -70,7 +97,7 @@ if (!isProduction) {
 app.use(function(err, req, res, next) {
     res.status(err.status || 500);
     res.json({'errors': {
-        message: err.message,
+        message: isProduction ? 'Internal server error' : err.message,
         error: {}
     }});
 });

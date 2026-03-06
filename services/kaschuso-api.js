@@ -483,7 +483,7 @@ async function getCookies(mandator, username, password) {
     return cookies;
 }
 
-function storeCookies(cookiesMap, mandator, username, cookies) {
+function storeCookies(mandator, username, cookies) {
     cookiesMap[mandator + ":" + username] = cookies;
 }
 

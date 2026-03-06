@@ -23,6 +23,7 @@ This service exposes a small HTTP API to authenticate against KASCHUSO and fetch
 10. Development
 11. Docker
 12. Security Notes
+13. Publish Gate
 
 ## Overview
 
@@ -34,7 +35,7 @@ Default local address:
 
 ## Requirements
 
-- Node.js 14+ (project Dockerfile uses Node 14)
+- Node.js 20+ (project Dockerfile uses Node 20-alpine)
 - npm or yarn
 - Internet access to `https://kaschuso.so.ch/`
 
@@ -58,6 +59,12 @@ npm install
 cp .env.default .env
 ```
 
+For production deployments, start from the production template:
+
+```bash
+cp .env.production.example .env
+```
+
 3. Start the server.
 
 ```bash
@@ -73,7 +80,7 @@ npm start
 4. Verify the API is reachable.
 
 ```bash
-curl -i http://localhost:3001/api/authenticate
+curl -i http://localhost:3001/health
 ```
 
 ## Configuration
@@ -84,13 +91,24 @@ Available variables:
 
 - `PORT`: server port (default `3001`)
 - `KASCHUSO_BASE_URL`: base URL (default `https://kaschuso.so.ch/`)
+- `FRONTEND_ORIGIN`: allowed CORS origin (required in production)
+- `JWT_SECRET`: token signing secret (required in production)
+- `API_SESSION_TTL_SECONDS`: token/session lifetime (default `900`)
+- `API_RATE_LIMIT_WINDOW_MS`: global rate-limit window (default `60000`)
+- `API_RATE_LIMIT_MAX`: global rate-limit max requests (default `120`)
+- `API_AUTH_RATE_LIMIT_WINDOW_MS`: auth route rate-limit window (default `300000`)
+- `API_AUTH_RATE_LIMIT_MAX`: auth route rate-limit max requests (default `10`)
 
 Example `.env`:
 
 ```env
 PORT=3001
 KASCHUSO_BASE_URL=https://kaschuso.so.ch/
+FRONTEND_ORIGIN=https://app.example.com
+JWT_SECRET=change-me
 ```
+
+Production template: `.env.production.example`
 
 ## Run Modes
 
@@ -138,84 +156,69 @@ Returns a list of available mandators.
 
 Note: On current upstream KASCHUSO pages, mandators may not be publicly listed anymore. In that case this endpoint returns an empty array.
 
-### `GET /api/authenticate`
+### `POST /api/authenticate`
 
-Query params:
+JSON body:
 
 - `mandator`
 - `username`
 - `password`
 
-Returns whether credentials are valid.
+Returns whether credentials are valid and issues a short-lived bearer token.
 
 ### `GET /api/user/info`
 
-Query params:
+Headers:
 
-- `mandator`
-- `username`
-- `password`
+- `Authorization: Bearer <token>`
 
 Returns user profile information.
 
 ### `GET /api/grades`
 
-Query params:
+Headers:
 
-- `mandator`
-- `username`
-- `password`
+- `Authorization: Bearer <token>`
 
 Returns parsed subjects and grades.
 
 ### `GET /api/absences`
 
-Query params:
+Headers:
 
-- `mandator`
-- `username`
-- `password`
+- `Authorization: Bearer <token>`
 
 Returns absence entries.
 
 ## Example Calls
 
-Use `--data-urlencode` to avoid shell escaping issues.
-
 Authenticate:
 
 ```bash
-curl --get 'http://localhost:3001/api/authenticate' \
-	--data-urlencode 'mandator=YOUR_MANDATOR' \
-	--data-urlencode 'username=YOUR_USERNAME' \
-	--data-urlencode 'password=YOUR_PASSWORD'
+curl -X POST 'http://localhost:3001/api/authenticate' \
+  -H 'Content-Type: application/json' \
+  -d '{"mandator":"YOUR_MANDATOR","username":"YOUR_USERNAME","password":"YOUR_PASSWORD"}'
 ```
 
 Get grades:
 
 ```bash
-curl --get 'http://localhost:3001/api/grades' \
-	--data-urlencode 'mandator=YOUR_MANDATOR' \
-	--data-urlencode 'username=YOUR_USERNAME' \
-	--data-urlencode 'password=YOUR_PASSWORD'
+curl 'http://localhost:3001/api/grades' \
+  -H 'Authorization: Bearer YOUR_TOKEN'
 ```
 
 Get absences:
 
 ```bash
-curl --get 'http://localhost:3001/api/absences' \
-	--data-urlencode 'mandator=YOUR_MANDATOR' \
-	--data-urlencode 'username=YOUR_USERNAME' \
-	--data-urlencode 'password=YOUR_PASSWORD'
+curl 'http://localhost:3001/api/absences' \
+  -H 'Authorization: Bearer YOUR_TOKEN'
 ```
 
 Get user info:
 
 ```bash
-curl --get 'http://localhost:3001/api/user/info' \
-	--data-urlencode 'mandator=YOUR_MANDATOR' \
-	--data-urlencode 'username=YOUR_USERNAME' \
-	--data-urlencode 'password=YOUR_PASSWORD'
+curl 'http://localhost:3001/api/user/info' \
+  -H 'Authorization: Bearer YOUR_TOKEN'
 ```
 
 Get mandators:
@@ -232,7 +235,9 @@ Authenticate success:
 {
 	"mandator": "gibsso",
 	"username": "your.user",
-	"authenticated": true
+	"authenticated": true,
+	"token": "<jwt>",
+	"expiresIn": 900
 }
 ```
 
@@ -242,7 +247,9 @@ Authenticate failure:
 {
 	"mandator": "gibsso",
 	"username": "your.user",
-	"authenticated": false
+	"authenticated": false,
+	"reason": "AUTHENTICATION_FAILED",
+	"detail": "The upstream login did not accept the provided credentials."
 }
 ```
 
@@ -277,8 +284,75 @@ Grades response:
 ### `authenticated: false`
 
 - Verify `mandator`, username, and password.
-- Use `--data-urlencode` for curl parameters.
-- If password contains special chars (for example `!`), avoid direct URL strings.
+- Ensure you call `POST /api/authenticate` with a JSON body.
+
+## Publish Gate
+
+Run this checklist before public deployment.
+
+1. Dependency and runtime checks.
+
+```bash
+yarn install
+yarn audit --groups dependencies
+yarn test --runInBand
+```
+
+Expected:
+
+- `0 vulnerabilities found` in dependency audit
+- all tests pass
+
+2. Production startup smoke test.
+
+```bash
+PORT=3001 NODE_ENV=production JWT_SECRET=replace-me FRONTEND_ORIGIN=https://app.example.com timeout 15s yarn start
+```
+
+Expected:
+
+- server starts with `Listening on port 3001`
+
+3. Live health checks.
+
+```bash
+curl -sS http://localhost:3001/health
+curl -sS http://localhost:3001/api/health
+```
+
+Expected payload for both:
+
+```json
+{"status":"ok"}
+```
+
+4. Authorization guard checks.
+
+```bash
+curl -i http://localhost:3001/api/grades
+```
+
+Expected:
+
+- `401` response with `UNAUTHORIZED`
+
+5. Environment requirements for production.
+
+- `NODE_ENV=production`
+- `JWT_SECRET` must be set
+- `FRONTEND_ORIGIN` must be set to your frontend origin
+- Prefer HTTPS at ingress/reverse proxy with HSTS enabled
+
+6. Container build (where Docker is available).
+
+```bash
+docker build -t kaschuso-api:release .
+```
+
+Expected:
+
+- image builds without errors on Node 20 runtime
+
 
 ### `subjects: []` for grades
 
@@ -331,10 +405,11 @@ docker run --rm -p 3001:3001 --env-file .env kaschuso-api
 
 ## Security Notes
 
-- This API currently accepts credentials via query string for compatibility with existing routes.
-- Query strings can end up in logs, browser history, and reverse proxy logs.
-- Prefer running this behind HTTPS and a trusted internal network.
-- For production hardening, migrate endpoints to `POST` body payloads and redact sensitive fields in logs.
+- Credentials are accepted only via `POST /api/authenticate` JSON body.
+- Protected endpoints require `Authorization: Bearer <token>`.
+- Do not send credentials in query parameters.
+- Always deploy behind HTTPS and set `JWT_SECRET` + `FRONTEND_ORIGIN` in production.
+- Do not commit secrets or real credentials.
 
 ## Credits
 

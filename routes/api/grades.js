@@ -1,11 +1,13 @@
 const { getGrades } = require('../../services/kaschuso-api');
+const { requireAuth } = require('./middleware/auth');
+const { rejectCredentialQueryParams } = require('./middleware/validation');
 
 var router = require('express').Router();
 
-router.get('/', function(req, res, next) {
-    const mandator = req.query.mandator;
-    const username = req.query.username;
-    const password = req.query.password;
+router.get('/', rejectCredentialQueryParams, requireAuth, function(req, res, next) {
+    const mandator = req.auth.mandator;
+    const username = req.auth.username;
+    const password = req.auth.password;
     getGrades(mandator, username, password).then(subjects => {
         return res.json({
             mandator: mandator,
