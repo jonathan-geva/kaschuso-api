@@ -9,6 +9,7 @@ const {
     getGradesFromHtml,
     getUserInfoFromHtml,
     getCurrentRequestedPageFromHtml,
+    getLoginPayloadFromHtml,
     getActionFromSesJs,
     getAuthenticationFailureInfo,
     hasAuthenticatedSessionCookie,
@@ -241,6 +242,15 @@ test('get current requested page from html', async () => {
     const html = fs.readFileSync('./__test__/login.html', 'utf8');
     expect(getCurrentRequestedPageFromHtml(html))
     .toBe('LcLjlOlhylNbKRBT%2BWI6BQ%3D%3D');
+});
+
+test('build login payload from html form', async () => {
+    const html = fs.readFileSync('./__test__/login.html', 'utf8');
+    expect(getLoginPayloadFromHtml(html, 'john.doe', 'secret')).toEqual({
+        userid: 'john.doe',
+        password: 'secret',
+        currentRequestedPage: 'LcLjlOlhylNbKRBT%2BWI6BQ%3D%3D'
+    });
 });
 
 test('get action from ses.js', async () => {

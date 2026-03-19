@@ -80,12 +80,10 @@ async function authenticate(mandator, username, password) {
     loginHeaders['Referer'] = FORM_URL + mandator;
 
     // make login
+    const loginPayload = getLoginPayloadFromHtml(formRes.data, username, password);
+
     const loginRes = await axios.post(LOGIN_URL + getActionFromSesJs(sesJS.data), 
-        qs.stringify({
-            userid: username,
-            password: password,
-            currentRequestedPage: getCurrentRequestedPageFromHtml(formRes.data)
-        }),
+        qs.stringify(loginPayload),
         {
             withCredentials: true,
             headers: loginHeaders,
@@ -168,6 +166,25 @@ function getAuthenticationFailureInfo(error) {
 
 function getCurrentRequestedPageFromHtml(html) {
     return cheerio.load(html)('input[name=currentRequestedPage]').attr('value');
+}
+
+function getLoginPayloadFromHtml(html, username, password) {
+    const $ = cheerio.load(html);
+    const payload = {};
+
+    $('form[name=LoginForm] input[name]').each((_, element) => {
+        const input = $(element);
+        const name = input.attr('name');
+        if (!name) {
+            return;
+        }
+        payload[name] = input.attr('value') || '';
+    });
+
+    payload.userid = username;
+    payload.password = password;
+
+    return payload;
 }
 
 function getActionFromSesJs(html) {
@@ -588,5 +605,6 @@ module.exports = {
     getGradesFromHtml,
     getUserInfoFromHtml,
     getCurrentRequestedPageFromHtml,
+    getLoginPayloadFromHtml,
     getActionFromSesJs
 };
