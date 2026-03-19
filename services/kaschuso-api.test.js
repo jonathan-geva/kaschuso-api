@@ -11,7 +11,8 @@ const {
     getCurrentRequestedPageFromHtml,
     getActionFromSesJs,
     getAuthenticationFailureInfo,
-    hasAuthenticatedSessionCookie
+    hasAuthenticatedSessionCookie,
+    mergeCookies
 } = require('./kaschuso-api');
 
 test('extract cookies from header', () => {
@@ -49,6 +50,18 @@ test('detect authenticated session cookies by prefix', () => {
     expect(hasAuthenticatedSessionCookie({
         'PHPSESSID': 'session'
     })).toBe(false);
+});
+
+test('merge cookies keeps later upstream values', () => {
+    expect(mergeCookies(
+        { SLSLanguage: 'de' },
+        { PHPSESSID: 'bootstrap' },
+        { PHPSESSID: 'login-page', BID: 'xyz' }
+    )).toEqual({
+        SLSLanguage: 'de',
+        PHPSESSID: 'login-page',
+        BID: 'xyz'
+    });
 });
 
 test('find url by pageid', async () => {

@@ -43,6 +43,10 @@ async function basicAuthenticate() {
         });
 }
 
+function mergeCookies() {
+    return Object.assign({}, ...Array.from(arguments).filter(Boolean));
+}
+
 async function authenticate(mandator, username, password) {
     console.log('Authenticating: ' + username);
 
@@ -65,6 +69,9 @@ async function authenticate(mandator, username, password) {
             maxRedirects: 0
         })
     ]);
+
+    cookies = mergeCookies(cookies, formRes.cookies, sesJS.cookies);
+    headers['Cookie'] = toCookieHeaderString(cookies);
 
     let loginHeaders = Object.assign({}, headers);
     loginHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
@@ -91,7 +98,7 @@ async function authenticate(mandator, username, password) {
         throw error;
     }
     
-    cookies = { ...cookies, ...loginRes.cookies };
+    cookies = mergeCookies(cookies, loginRes.cookies);
     
     storeCookies(mandator, username, cookies);
 
@@ -555,6 +562,7 @@ module.exports = {
     authenticate,
     getAuthenticationFailureInfo,
     hasAuthenticatedSessionCookie,
+    mergeCookies,
     getUserInfo,
     getGrades,
     getAbsences,
