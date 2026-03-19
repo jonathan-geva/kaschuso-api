@@ -285,11 +285,26 @@ test('classify auth failure without redirect as upstream change', () => {
     expect(getAuthenticationFailureInfo({
         name: 'AuthenticationError',
         authDiagnostics: {
-            hasLocationHeader: false
+            hasLocationHeader: false,
+            hasCredentialError: false
         }
     })).toEqual({
         reason: 'UPSTREAM_RESPONSE_CHANGED',
         detail: 'The upstream login did not return a valid authenticated session.'
+    });
+});
+
+test('classify auth failure with inline credential error as invalid credentials', () => {
+    expect(getAuthenticationFailureInfo({
+        name: 'AuthenticationError',
+        authDiagnostics: {
+            hasLocationHeader: false,
+            hasCredentialError: true,
+            credentialErrorText: 'Zugriff verweigert. Ungültiger Benutzername oder falsches Passwort.'
+        }
+    })).toEqual({
+        reason: 'INVALID_CREDENTIALS',
+        detail: 'The upstream login did not accept the provided credentials.'
     });
 });
 

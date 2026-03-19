@@ -108,7 +108,7 @@ async function authenticate(mandator, username, password) {
 
 function getAuthenticationFailureInfo(error) {
     if (error && error.name === 'AuthenticationError') {
-        if (error.authDiagnostics && error.authDiagnostics.hasLocationHeader) {
+        if (error.authDiagnostics && (error.authDiagnostics.hasLocationHeader || error.authDiagnostics.hasCredentialError)) {
             return {
                 reason: 'INVALID_CREDENTIALS',
                 detail: 'The upstream login did not accept the provided credentials.'
@@ -550,6 +550,8 @@ function buildAuthenticationDiagnostics(loginRes) {
     const responseBody = loginRes && typeof loginRes.data === 'string' ? loginRes.data : '';
     const page = responseBody ? cheerio.load(responseBody) : null;
 
+    const errorText = page ? page('.sls-global-errors-msg, [class*="error"], .alert').text().trim() : '';
+
     return {
         status: loginRes && (loginRes.status || (loginRes.error && loginRes.error.response && loginRes.error.response.status)) || null,
         hasLocationHeader: Boolean(loginRes && loginRes.locationValue),
@@ -558,6 +560,8 @@ function buildAuthenticationDiagnostics(loginRes) {
         responseTitle: page ? page('title').text().trim() || null : null,
         hasLoginForm: Boolean(page && page('form').length),
         hasPasswordField: Boolean(page && page('input[type=password], input[name=password]').length),
+        hasCredentialError: Boolean(errorText),
+        credentialErrorText: errorText || null,
         bodyPreview: responseBody
             ? responseBody.replace(/\s+/g, ' ').trim().slice(0, 160)
             : null
