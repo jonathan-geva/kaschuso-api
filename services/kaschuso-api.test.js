@@ -30,6 +30,16 @@ test('extract cookies from header', () => {
     });
 });
 
+test('extract cookies with equals signs in value', () => {
+    expect(getCookiesFromHeaders({
+        'set-cookie': [
+            'SCDID_S=abc=def==; path=/; Secure; HttpOnly'
+        ]
+    })).toEqual({
+        'SCDID_S': 'abc=def=='
+    });
+});
+
 test('put cookies in header string', () => {
     expect(toCookieHeaderString({
         'SCDID_S': 'yacJ16u6KXqt9Q-JCFgJBfCvEVooQ9jGnHqvZhOqhlHPXPqwIUza9A$$#dMp5ltMsuiHcN8lzd5oJhjUNIYLu_aDomqWWvoKShT0$',

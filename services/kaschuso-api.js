@@ -568,8 +568,15 @@ function getCookiesFromHeaders(headers) {
     const cookies = {};
     if (headers['set-cookie']) {
         headers['set-cookie'].forEach(cookie => {
-            const keyValue = cookie.split(';')[0].split('=');
-            cookies[keyValue[0]] = keyValue[1];
+            const firstSegment = cookie.split(';')[0];
+            const separatorIndex = firstSegment.indexOf('=');
+            if (separatorIndex === -1) {
+                return;
+            }
+
+            const key = firstSegment.slice(0, separatorIndex);
+            const value = firstSegment.slice(separatorIndex + 1);
+            cookies[key] = value;
         });
     }
     return cookies;
