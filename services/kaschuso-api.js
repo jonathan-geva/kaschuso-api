@@ -10,6 +10,7 @@ const BASE_URL   = process.env.KASCHUSO_BASE_URL || 'https://kaschuso.so.ch/';
 const FORM_URL   = BASE_URL + 'login/sls/auth?RequestedPage=%2f';
 const LOGIN_URL  = BASE_URL + 'login/sls/';
 const SES_JS_URL = BASE_URL + 'sil-bid-check/ses.js';
+const BASE_ORIGIN = new URL(BASE_URL).origin;
 
 
 const GRADES_PAGE_ID   = 21311;
@@ -75,6 +76,8 @@ async function authenticate(mandator, username, password) {
 
     let loginHeaders = Object.assign({}, headers);
     loginHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
+    loginHeaders['Origin'] = BASE_ORIGIN;
+    loginHeaders['Referer'] = FORM_URL + mandator;
 
     // make login
     const loginRes = await axios.post(LOGIN_URL + getActionFromSesJs(sesJS.data), 
@@ -527,11 +530,20 @@ function hasAuthenticatedSessionCookie(cookies) {
 }
 
 function buildAuthenticationDiagnostics(loginRes) {
+    const responseBody = loginRes && typeof loginRes.data === 'string' ? loginRes.data : '';
+    const page = responseBody ? cheerio.load(responseBody) : null;
+
     return {
         status: loginRes && (loginRes.status || (loginRes.error && loginRes.error.response && loginRes.error.response.status)) || null,
         hasLocationHeader: Boolean(loginRes && loginRes.locationValue),
         locationValue: loginRes && loginRes.locationValue ? loginRes.locationValue : null,
-        cookieNames: Object.keys((loginRes && loginRes.cookies) || {})
+        cookieNames: Object.keys((loginRes && loginRes.cookies) || {}),
+        responseTitle: page ? page('title').text().trim() || null : null,
+        hasLoginForm: Boolean(page && page('form').length),
+        hasPasswordField: Boolean(page && page('input[type=password], input[name=password]').length),
+        bodyPreview: responseBody
+            ? responseBody.replace(/\s+/g, ' ').trim().slice(0, 160)
+            : null
     };
 }
 
