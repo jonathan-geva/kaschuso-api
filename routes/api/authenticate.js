@@ -26,7 +26,7 @@ router.post('/', authRateLimit, validateAuthBody, function(req, res) {
             mandator: mandator,
             username: username,
             authenticated: false,
-            reason: 'AUTHENTICATION_FAILED',
+            reason: failure.reason,
             detail: failure.detail
         });
     });
