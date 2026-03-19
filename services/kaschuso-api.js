@@ -83,9 +83,11 @@ async function authenticate(mandator, username, password) {
         }
     );
     
-    if (!loginRes.cookies['SCDID_S']) {
-        const error =  new Error('username or password invalid');
+    if (!hasAuthenticatedSessionCookie(loginRes.cookies)) {
+        const error =  new Error('upstream login did not yield an authenticated session');
         error.name = 'AuthenticationError';
+        error.authDiagnostics = buildAuthenticationDiagnostics(loginRes);
+        console.warn('Authentication rejected by upstream', error.authDiagnostics);
         throw error;
     }
     
@@ -98,9 +100,16 @@ async function authenticate(mandator, username, password) {
 
 function getAuthenticationFailureInfo(error) {
     if (error && error.name === 'AuthenticationError') {
+        if (error.authDiagnostics && error.authDiagnostics.hasLocationHeader) {
+            return {
+                reason: 'INVALID_CREDENTIALS',
+                detail: 'The upstream login did not accept the provided credentials.'
+            };
+        }
+
         return {
-            reason: 'INVALID_CREDENTIALS',
-            detail: 'The upstream login did not accept the provided credentials.'
+            reason: 'UPSTREAM_RESPONSE_CHANGED',
+            detail: 'The upstream login did not return a valid authenticated session.'
         };
     }
 
@@ -500,6 +509,25 @@ function toCookieHeaderString(cookies) {
     return headerString;
 }
 
+function hasAuthenticatedSessionCookie(cookies) {
+    if (!cookies) {
+        return false;
+    }
+
+    return Object.keys(cookies).some(function(cookieName) {
+        return /^SCDID(?:_|$)/.test(cookieName);
+    });
+}
+
+function buildAuthenticationDiagnostics(loginRes) {
+    return {
+        status: loginRes && (loginRes.status || (loginRes.error && loginRes.error.response && loginRes.error.response.status)) || null,
+        hasLocationHeader: Boolean(loginRes && loginRes.locationValue),
+        locationValue: loginRes && loginRes.locationValue ? loginRes.locationValue : null,
+        cookieNames: Object.keys((loginRes && loginRes.cookies) || {})
+    };
+}
+
 function getCookiesFromHeaders(headers) {
     const cookies = {};
     if (headers['set-cookie']) {
@@ -526,6 +554,7 @@ axios.interceptors.response.use((response) => {
 module.exports = {
     authenticate,
     getAuthenticationFailureInfo,
+    hasAuthenticatedSessionCookie,
     getUserInfo,
     getGrades,
     getAbsences,

@@ -10,7 +10,8 @@ const {
     getUserInfoFromHtml,
     getCurrentRequestedPageFromHtml,
     getActionFromSesJs,
-    getAuthenticationFailureInfo
+    getAuthenticationFailureInfo,
+    hasAuthenticatedSessionCookie
 } = require('./kaschuso-api');
 
 test('extract cookies from header', () => {
@@ -33,6 +34,21 @@ test('put cookies in header string', () => {
         'SLSLanguage': 'de',
         'PHPSESSID': '6abvi005sklkauitprbspsoceu'
     })).toBe('SCDID_S=yacJ16u6KXqt9Q-JCFgJBfCvEVooQ9jGnHqvZhOqhlHPXPqwIUza9A$$#dMp5ltMsuiHcN8lzd5oJhjUNIYLu_aDomqWWvoKShT0$; SLSLanguage=de; PHPSESSID=6abvi005sklkauitprbspsoceu');
+});
+
+test('detect authenticated session cookies by prefix', () => {
+    expect(hasAuthenticatedSessionCookie({
+        'SCDID_S': 'token',
+        'PHPSESSID': 'session'
+    })).toBe(true);
+
+    expect(hasAuthenticatedSessionCookie({
+        'SCDID': 'token'
+    })).toBe(true);
+
+    expect(hasAuthenticatedSessionCookie({
+        'PHPSESSID': 'session'
+    })).toBe(false);
 });
 
 test('find url by pageid', async () => {
@@ -220,13 +236,37 @@ test('get action from ses.js', async () => {
     .toMatch(/^auth\?8C3C82CB56AE=[\da-f]{32}$/);
 });
 
+test('classify auth failure with redirect as invalid credentials', () => {
+    expect(getAuthenticationFailureInfo({
+        name: 'AuthenticationError',
+        authDiagnostics: {
+            hasLocationHeader: true
+        }
+    })).toEqual({
+        reason: 'INVALID_CREDENTIALS',
+        detail: 'The upstream login did not accept the provided credentials.'
+    });
+});
+
+test('classify auth failure without redirect as upstream change', () => {
+    expect(getAuthenticationFailureInfo({
+        name: 'AuthenticationError',
+        authDiagnostics: {
+            hasLocationHeader: false
+        }
+    })).toEqual({
+        reason: 'UPSTREAM_RESPONSE_CHANGED',
+        detail: 'The upstream login did not return a valid authenticated session.'
+    });
+});
+
 test('classify auth failure for invalid credentials', () => {
     const error = new Error('username or password invalid');
     error.name = 'AuthenticationError';
 
     expect(getAuthenticationFailureInfo(error)).toEqual({
-        reason: 'INVALID_CREDENTIALS',
-        detail: 'The upstream login did not accept the provided credentials.'
+        reason: 'UPSTREAM_RESPONSE_CHANGED',
+        detail: 'The upstream login did not return a valid authenticated session.'
     });
 });
 
