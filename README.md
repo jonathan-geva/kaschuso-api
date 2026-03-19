@@ -29,9 +29,16 @@ This service exposes a small HTTP API to authenticate against KASCHUSO and fetch
 
 This project is an Express server (`app.js`) with route handlers in `routes/api/` and scraping logic in `services/kaschuso-api.js`.
 
-Default local address:
+### Production Deployment
 
-- `http://localhost:3001`
+- **API Base URL**: [https://kaschuso-api.onrender.com](https://kaschuso-api.onrender.com)
+- **Deployment**: Render (free tier, auto-deploys on GitHub `main` branch push)
+- **Service ID**: `srv-d6tvs9euk2gs7393bia0`
+- **Frontend Consumer**: [Cloudflare Pages](https://kaschuso-dashboard.pages.dev)
+
+### Local Development
+
+- Default address: `http://localhost:3001`
 
 ## Requirements
 
@@ -141,6 +148,31 @@ Stop process on port 3001:
 ```bash
 npm run stop
 ```
+
+## Authentication
+
+The API implements secure upstream session management:
+
+### How It Works
+
+1. **Session Bootstrap**: A `basicAuthenticate()` call to the KASCHUSO root initializes a session cookie (`SCDID_S`).
+2. **CSRF Handling**: The login form page and `ses.js` (containing BID tokens) are fetched with the session cookie.
+3. **Form Submission**: All form inputs are scraped and submitted as POST with:
+   - Accumulated session cookies from steps 1-2
+   - Browser-like headers (`Origin`, `Referer`)
+   - BID parameter from `ses.js` (CSRF token)
+4. **Session Validation**: On success, upstream returns a new `SCDID_S` cookie. This is checked via regex `/^SCDID(?:_|$)/`.
+
+### Error Classification
+
+The `/api/authenticate` endpoint returns the following failure reasons:
+
+- **`INVALID_CREDENTIALS`**: The upstream login returned HTTP 200 with a credential error message inline (German: `"Zugriff verweigert..."`), OR a 302 redirect indicating credentials were processed but rejected.
+- **`UPSTREAM_RESPONSE_CHANGED`**: The upstream login returned HTTP 200 but no session cookie and no credential error message — format may have changed.
+- **`UPSTREAM_UNAVAILABLE`**: HTTP 5xx from upstream.
+- **`NETWORK_ERROR`**: Network/connectivity issue (e.g., no route to host, timeout).
+- **`UPSTREAM_TIMEOUT`**: Request exceeded `axios` timeout or `maxRedirects`.
+- **`UPSTREAM_FORBIDDEN`**: HTTP 403 from upstream (IP block, too many requests, etc.).
 
 ## API Endpoints
 
