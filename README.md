@@ -192,7 +192,13 @@ curl -i http://localhost:3001/health
 
 Returns a list of available mandators.
 
-Note: On current upstream KASCHUSO pages, mandators may not be publicly listed anymore. In that case this endpoint returns an empty array.
+The endpoint first parses `https://kaschuso.so.ch/robots.txt` (live source) and merges those slugs with local curated metadata.
+
+If robots data is unavailable, it falls back to scraping the public landing page and then to the curated fallback list.
+
+Known alias slugs are normalized to canonical values in API output (for example `kbssogr` -> `kbsso`) so clients get stable IDs.
+
+Note: The result is best effort. It is intended to stay useful after the upstream removed most public school links, but newly added schools or renamed mandators may still need a code update.
 
 ### `POST /api/authenticate`
 
@@ -400,7 +406,13 @@ Expected:
 ### `/api/mandators` returns empty list
 
 - Current upstream often no longer exposes mandator links publicly.
-- Use a known mandator directly (for example from your school docs).
+- The API now discovers slugs primarily from `robots.txt` and merges them with curated labels.
+- If your school is missing, use the known mandator directly from your school docs and add it to the fallback list in `services/kaschuso-api.js`.
+
+### Canonical mandator slugs
+
+- Some upstream slugs are aliases and are normalized in API output (for example `kbssogr` is returned as `kbsso`).
+- Prefer storing and reusing the canonical slug values returned by `/api/mandators`.
 
 ### Upstream/network issues
 

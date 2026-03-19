@@ -58,7 +58,9 @@ The upstream KASCHUSO portal requires:
 
 ## Scraping Pitfalls
 - Do not reintroduce legacy browser fingerprint headers in `DEFAULT_HEADERS`; upstream can return `403`.
-- `/api/mandators` may legitimately return an empty list because upstream no longer reliably exposes mandator links.
+- `/api/mandators` should primarily discover mandator slugs from `https://kaschuso.so.ch/robots.txt` and merge with curated metadata.
+- Keep fallback order for mandator discovery: `robots.txt` -> root-page HTML links -> curated list.
+- Alias slugs may appear upstream (for example `kbssogr`); normalize to canonical slugs (`kbsso`) before returning API output.
 - Redirect handling matters for upstream fetches; changing `maxRedirects` can break parsing.
 - Cheerio often normalizes `tbody`; prefer selectors that work with inserted table wrappers.
 - Cookie values may contain `=` signs; parse carefully with `indexOf('=')` not `split('=')[1]`.

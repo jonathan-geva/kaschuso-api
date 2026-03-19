@@ -4,6 +4,9 @@ const {
     getCookiesFromHeaders,
     toCookieHeaderString,
     findUrlByPageid,
+    mergeMandatorLists,
+    getMandatorsFromRobotsTxt,
+    normalizeMandatorName,
     getMandatorsFromHtml,
     getAbsencesFromHtml,
     getGradesFromHtml,
@@ -99,6 +102,99 @@ test('get mandators from html', async () => {
             "name": "gibsso",
             "description": "Gewerblich-industrielle Berufsfachschule Solothurn",
             "url": "https://kaschuso.so.ch/gibsso"
+        }
+    ]);
+});
+
+test('get mandators from robots.txt', () => {
+    const robotsTxt = [
+        'Disallow: /bzwh/',
+        'Disallow: /gibsso/',
+        'Disallow: /kbsso/',
+        'Disallow: /portal/'
+    ].join('\n');
+
+    expect(getMandatorsFromRobotsTxt(robotsTxt)).toEqual([
+        {
+            name: 'bzwh',
+            description: 'bzwh',
+            url: 'https://kaschuso.so.ch/bzwh'
+        },
+        {
+            name: 'gibsso',
+            description: 'gibsso',
+            url: 'https://kaschuso.so.ch/gibsso'
+        },
+        {
+            name: 'kbsso',
+            description: 'kbsso',
+            url: 'https://kaschuso.so.ch/kbsso'
+        }
+    ]);
+});
+
+test('normalize mandator aliases to canonical slug', () => {
+    expect(normalizeMandatorName('kbssogr')).toBe('kbsso');
+    expect(normalizeMandatorName('KBSsOGR')).toBe('kbsso');
+    expect(normalizeMandatorName('ksso')).toBe('ksso');
+});
+
+test('merge mandators appends curated fallbacks without duplicating live entries', () => {
+    expect(mergeMandatorLists(
+        [
+            {
+                name: 'gibsso',
+                description: 'Live GIBS Solothurn',
+                url: 'https://kaschuso.so.ch/gibsso'
+            }
+        ],
+        [
+            {
+                name: 'gibsso',
+                description: 'Fallback GIBS Solothurn',
+                url: 'https://kaschuso.so.ch/gibsso'
+            },
+            {
+                name: 'ksso',
+                description: 'Kantonsschule Solothurn',
+                url: 'https://kaschuso.so.ch/ksso'
+            }
+        ]
+    )).toEqual([
+        {
+            name: 'ksso',
+            description: 'Kantonsschule Solothurn',
+            url: 'https://kaschuso.so.ch/ksso'
+        },
+        {
+            name: 'gibsso',
+            description: 'Live GIBS Solothurn',
+            url: 'https://kaschuso.so.ch/gibsso'
+        }
+    ]);
+});
+
+test('merge mandators canonicalizes aliases and keeps best description', () => {
+    expect(mergeMandatorLists(
+        [
+            {
+                name: 'kbssogr',
+                description: 'kbssogr',
+                url: 'https://kaschuso.so.ch/kbssogr'
+            }
+        ],
+        [
+            {
+                name: 'kbsso',
+                description: 'Kaufmaennische Berufsfachschule Solothurn',
+                url: 'https://kaschuso.so.ch/kbsso'
+            }
+        ]
+    )).toEqual([
+        {
+            name: 'kbsso',
+            description: 'Kaufmaennische Berufsfachschule Solothurn',
+            url: 'https://kaschuso.so.ch/kbsso'
         }
     ]);
 });

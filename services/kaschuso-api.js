@@ -10,7 +10,70 @@ const BASE_URL   = process.env.KASCHUSO_BASE_URL || 'https://kaschuso.so.ch/';
 const FORM_URL   = BASE_URL + 'login/sls/auth?RequestedPage=%2f';
 const LOGIN_URL  = BASE_URL + 'login/sls/';
 const SES_JS_URL = BASE_URL + 'sil-bid-check/ses.js';
+const ROBOTS_URL = BASE_URL + 'robots.txt';
 const BASE_ORIGIN = new URL(BASE_URL).origin;
+
+const MANDATOR_ALIASES = {
+    kbssogr: 'kbsso'
+};
+
+const KNOWN_MANDATORS = [
+    {
+        name: 'bzwh',
+        description: 'Bildungszentrum Wallierhof',
+        url: BASE_URL + 'bzwh'
+    },
+    {
+        name: 'ebzol',
+        description: 'Erwachsenenbildungszentrum Olten',
+        url: BASE_URL + 'ebzol'
+    },
+    {
+        name: 'ebzso',
+        description: 'Erwachsenenbildungszentrum Solothurn',
+        url: BASE_URL + 'ebzso'
+    },
+    {
+        name: 'gibsgr',
+        description: 'Gewerblich-industrielle Berufsfachschule Grenchen',
+        url: BASE_URL + 'gibsgr'
+    },
+    {
+        name: 'gibsol',
+        description: 'Gewerblich-industrielle Berufsfachschule Olten',
+        url: BASE_URL + 'gibsol'
+    },
+    {
+        name: 'gibsso',
+        description: 'Gewerblich-industrielle Berufsfachschule Solothurn',
+        url: BASE_URL + 'gibsso'
+    },
+    {
+        name: 'hfpo',
+        description: 'Hoehere Fachschule Pflege Olten',
+        url: BASE_URL + 'hfpo'
+    },
+    {
+        name: 'kbsol',
+        description: 'Kaufmaennische Berufsfachschule Olten',
+        url: BASE_URL + 'kbsol'
+    },
+    {
+        name: 'kbsso',
+        description: 'Kaufmaennische Berufsfachschule Solothurn',
+        url: BASE_URL + 'kbsso'
+    },
+    {
+        name: 'ksol',
+        description: 'Kantonsschule Olten',
+        url: BASE_URL + 'ksol'
+    },
+    {
+        name: 'ksso',
+        description: 'Kantonsschule Solothurn',
+        url: BASE_URL + 'ksso'
+    }
+];
 
 
 const GRADES_PAGE_ID   = 21311;
@@ -429,14 +492,61 @@ async function getAbsencesFromHtml(html) {
 async function getMandators() {
     console.log('Fetching all mandators');
 
-    let headers = Object.assign({}, DEFAULT_HEADERS);
-    headers['Cookie'] = toCookieHeaderString(await basicAuthenticate());
+    try {
+        const robotsMandators = await axios.get(ROBOTS_URL, {
+            withCredentials: true,
+            headers: DEFAULT_HEADERS,
+            maxRedirects: 5
+        }).then(res => getMandatorsFromRobotsTxt(res.data));
 
-    return await axios.get(BASE_URL, {
+        if (robotsMandators.length > 0) {
+            return mergeMandatorLists(robotsMandators, KNOWN_MANDATORS);
+        }
+    } catch (error) {
+        console.warn('Could not load mandators from robots.txt', error.message);
+    }
+
+    try {
+        let headers = Object.assign({}, DEFAULT_HEADERS);
+        headers['Cookie'] = toCookieHeaderString(await basicAuthenticate());
+
+        const discoveredMandators = await axios.get(BASE_URL, {
             withCredentials: true,
             headers: headers,
             maxRedirects: 5
         }).then(res => getMandatorsFromHtml(res.data));
+
+        return mergeMandatorLists(discoveredMandators, KNOWN_MANDATORS);
+    } catch (error) {
+        console.warn('Falling back to curated mandator list', error.message);
+        return mergeMandatorLists(KNOWN_MANDATORS);
+    }
+}
+
+function getMandatorsFromRobotsTxt(robotsTxt) {
+    if (typeof robotsTxt !== 'string') {
+        return [];
+    }
+
+    const ignoredSlugs = new Set(['login', 'portal', 'staticfiles', 'sil-bid-check']);
+
+    const slugs = Array.from(new Set(
+        robotsTxt
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .map(line => {
+                const match = line.match(/^Disallow:\s*\/([a-z0-9-]+)\/?\s*$/i);
+                return match ? match[1].toLowerCase() : undefined;
+            })
+            .filter(Boolean)
+            .filter(slug => !ignoredSlugs.has(slug))
+    ));
+
+    return slugs.map(name => ({
+        name,
+        description: name,
+        url: BASE_URL + name
+    }));
 }
 
 async function getMandatorsFromHtml(html) {
@@ -467,6 +577,82 @@ async function getMandatorsFromHtml(html) {
                 url: url
             };
         }))).filter(x => x);
+}
+
+function mergeMandatorLists() {
+    const mandators = new Map();
+
+    Array.from(arguments)
+        .flat()
+        .filter(Boolean)
+        .forEach(mandator => {
+            const normalizedMandator = normalizeMandator(mandator);
+            if (!normalizedMandator) {
+                return;
+            }
+
+            const existing = mandators.get(normalizedMandator.name);
+            if (!existing) {
+                mandators.set(normalizedMandator.name, {
+                    name: normalizedMandator.name,
+                    description: normalizedMandator.description,
+                    url: normalizedMandator.url
+                });
+                return;
+            }
+
+            mandators.set(normalizedMandator.name, {
+                name: existing.name,
+                description: pickBestMandatorDescription(existing.description, normalizedMandator.description, normalizedMandator.name),
+                url: BASE_URL + normalizedMandator.name
+            });
+        });
+
+    return Array.from(mandators.values())
+        .sort((left, right) => left.description.localeCompare(right.description));
+}
+
+function normalizeMandatorName(name) {
+    if (!name || typeof name !== 'string') {
+        return undefined;
+    }
+
+    const slug = name.trim().toLowerCase();
+    return MANDATOR_ALIASES[slug] || slug;
+}
+
+function normalizeMandator(mandator) {
+    if (!mandator || !mandator.name) {
+        return undefined;
+    }
+
+    const name = normalizeMandatorName(mandator.name);
+    if (!name) {
+        return undefined;
+    }
+
+    const rawDescription = (mandator.description || '').trim();
+    const isAliasDescription = rawDescription && normalizeMandatorName(rawDescription) === name;
+    const description = rawDescription && !isAliasDescription ? rawDescription : name;
+
+    return {
+        name,
+        description,
+        url: BASE_URL + name
+    };
+}
+
+function pickBestMandatorDescription(existingDescription, incomingDescription, name) {
+    const current = existingDescription || name;
+    const incoming = incomingDescription || name;
+    const currentGeneric = current === name;
+    const incomingGeneric = incoming === name;
+
+    if (currentGeneric && !incomingGeneric) {
+        return incoming;
+    }
+
+    return current;
 }
 
 function findUrlByPageid(mandator, html, pageid) {
@@ -611,6 +797,9 @@ module.exports = {
     getCookiesFromHeaders,
     toCookieHeaderString,
     findUrlByPageid,
+    mergeMandatorLists,
+    getMandatorsFromRobotsTxt,
+    normalizeMandatorName,
     getMandatorsFromHtml,
     getAbsencesFromHtml,
     getGradesFromHtml,
