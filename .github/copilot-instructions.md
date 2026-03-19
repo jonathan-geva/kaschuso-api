@@ -31,5 +31,7 @@
 - Credentials must be accepted only via `POST /api/authenticate` JSON body (never via query params).
 - Protected endpoints must require bearer token auth and must reject credential query params.
 - Production deployments require explicit `JWT_SECRET` and `FRONTEND_ORIGIN` configuration.
+- `FRONTEND_ORIGIN` may contain a comma-separated allowlist; CORS responses must echo a single matching origin, never a comma-joined value.
+- For local Vite development, support both `http://localhost:5173` and `http://127.0.0.1:5173` where practical.
 - Keep password redaction behavior in request logging intact.
 - Do not commit secrets or real user credentials into code, tests, or docs.

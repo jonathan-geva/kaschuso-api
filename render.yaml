@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: kaschuso-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: API_SESSION_TTL_SECONDS
+        value: "900"

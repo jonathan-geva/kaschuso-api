@@ -10,18 +10,44 @@ var { globalRateLimit } = require('./routes/api/middleware/rate-limit');
 
 var isProduction = process.env.NODE_ENV === 'production';
 
+function normalizeOrigin(origin) {
+    return String(origin || '').trim().replace(/\/$/, '');
+}
+
+function getAllowedOrigins() {
+    var configured = (process.env.FRONTEND_ORIGIN || '')
+        .split(',')
+        .map(function(origin) { return normalizeOrigin(origin); })
+        .filter(Boolean);
+
+    if (!isProduction && configured.length === 0) {
+        return ['http://localhost:5173', 'http://127.0.0.1:5173'];
+    }
+
+    return configured;
+}
+
 // Create global app object
 var app = express();
 
+var allowedOrigins = getAllowedOrigins();
+
 var corsOptions = {
-    origin: process.env.FRONTEND_ORIGIN || false,
+    origin: function(origin, callback) {
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        var normalizedOrigin = normalizeOrigin(origin);
+        if (allowedOrigins.indexOf(normalizedOrigin) !== -1) {
+            return callback(null, true);
+        }
+
+        return callback(new Error('CORS origin not allowed: ' + normalizedOrigin));
+    },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization']
 };
-
-if (!process.env.FRONTEND_ORIGIN && !isProduction) {
-    corsOptions.origin = true;
-}
 
 app.use(cors(corsOptions));
 app.disable('x-powered-by');

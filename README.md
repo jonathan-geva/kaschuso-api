@@ -108,6 +108,12 @@ FRONTEND_ORIGIN=https://app.example.com
 JWT_SECRET=change-me
 ```
 
+Local frontend example (Vite):
+
+```env
+FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
+```
+
 Production template: `.env.production.example`
 
 ## Run Modes
@@ -369,6 +375,13 @@ Expected:
 - Confirm access to `https://kaschuso.so.ch/`.
 - Check proxy variables (`http_proxy`, `https_proxy`, `no_proxy`).
 - Retry later if upstream rate limits or blocks suspicious traffic.
+
+### CORS issues
+
+- Ensure `FRONTEND_ORIGIN` includes the exact frontend origin (protocol + host + port).
+- If you use both host variants locally, include both: `http://localhost:5173,http://127.0.0.1:5173`.
+- Restart the backend after changing `.env`.
+- Browser CORS checks require `Access-Control-Allow-Origin` to match a single request origin exactly.
 
 ### Service health check
 
