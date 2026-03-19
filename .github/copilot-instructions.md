@@ -66,6 +66,7 @@ The upstream KASCHUSO portal requires:
 - Session cookies may rotate between requests; always merge and forward accumulated cookies.
 
 ## Security And Logging
+- This repository is publicly available on GitHub; never publish secrets, deploy hooks, tokens, credentials, private identifiers, or other privacy-related information in code, docs, tests, commits, or generated content.
 - Credentials must be accepted only via `POST /api/authenticate` JSON body (never via query params).
 - Protected endpoints must require bearer token auth and must reject credential query params.
 - Production deployments require explicit `JWT_SECRET` and `FRONTEND_ORIGIN` configuration.
