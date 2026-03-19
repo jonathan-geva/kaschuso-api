@@ -5,7 +5,6 @@
 **Production Environment:**
 - **URL**: https://kaschuso-api.onrender.com
 - **Platform**: Render (free tier)
-- **Service ID**: srv-d6tvs9euk2gs7393bia0
 - **Auto-deploy**: Enabled on GitHub `main` branch push
 - **Critical Env Vars**:
   - `JWT_SECRET` (strong, required)

@@ -33,7 +33,6 @@ This project is an Express server (`app.js`) with route handlers in `routes/api/
 
 - **API Base URL**: [https://kaschuso-api.onrender.com](https://kaschuso-api.onrender.com)
 - **Deployment**: Render (free tier, auto-deploys on GitHub `main` branch push)
-- **Service ID**: `srv-d6tvs9euk2gs7393bia0`
 - **Frontend Consumer**: [Cloudflare Pages](https://kaschuso-dashboard.pages.dev)
 
 ### Local Development
