@@ -17,7 +17,8 @@ const {
     getActionFromSesJs,
     getAuthenticationFailureInfo,
     hasAuthenticatedSessionCookie,
-    mergeCookies
+    mergeCookies,
+    getPortalMetadata
 } = require('./kaschuso-api');
 
 test('extract cookies from header', () => {
@@ -325,6 +326,63 @@ test('get grades from html', async () => {
     ]);
 });
 
+test('get grades from modern layout with 4-column detail rows', async () => {
+        const html = `
+        <div id="uebersicht_bloecke">
+            <page>
+                <div>
+                    <table class="mdl-data-table mdl-table--listtable">
+                        <tbody>
+                            <tr>
+                                <td><b>M-2W-HnR</b><br>Mathematik</td>
+                                <td>4.700</td>
+                            </tr>
+                            <tr class="0_9_detailrow" style="display:none;">
+                                <td colspan="5">
+                                    <table class="clean">
+                                        <tr>
+                                            <td><i>Datum</i></td><td><i>Thema</i></td><td><i>Bewertung</i></td><td><i>Gewichtung</i></td>
+                                        </tr>
+                                        <tr>
+                                            <td>13.02.2026</td>
+                                            <td>Statistik und Kombinatorik</td>
+                                            <td>3.9</td>
+                                            <td>1</td>
+                                        </tr>
+                                        <tr>
+                                            <td>08.05.2026</td>
+                                            <td>Wahrscheinlichkeitsrechnung</td>
+                                            <td></td>
+                                            <td>1</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </page>
+        </div>`;
+
+        expect(await getGradesFromHtml(html)).toEqual([
+                {
+                        class: 'M-2W-HnR',
+                        name: 'Mathematik',
+                        average: '4.700',
+                        grades: [
+                                {
+                                        date: '13.02.2026',
+                                        name: 'Statistik und Kombinatorik',
+                                        value: '3.9',
+                                        points: undefined,
+                                        weighting: '1',
+                                    average: undefined
+                                }
+                        ]
+                }
+        ]);
+});
+
 test('get unconfirmed grades from html', async () => {
     const html = fs.readFileSync('./__test__/start.html', 'utf8');
     expect(await getUnconfirmedGradesFromHtml(html))
@@ -366,6 +424,44 @@ test('get unconfirmed grades from html', async () => {
             "value": "5.625"
         }
     ]);
+});
+
+test('get absences from modern summary table layout', async () => {
+        const html = `
+        <table class="mdl-data-table mdl-js-data-table mdl-table--listtable">
+            <tr>
+                <th>Datum von</th><th>Datum bis</th><th>Grund</th><th></th><th>Absenzpunkte</th>
+            </tr>
+            <tr style="color: #df8d06;">
+                <td>26.01.2026</td>
+                <td>04.02.2026</td>
+                <td></td>
+                <td></td>
+                <td><span>10</span></td>
+            </tr>
+            <tr style="color: #df8d06;">
+                <td>13.02.2026</td>
+                <td>13.02.2026</td>
+                <td>Arzt</td>
+                <td></td>
+                <td><span>3</span></td>
+            </tr>
+        </table>`;
+
+        expect(await getAbsencesFromHtml(html)).toEqual([
+                {
+                        date: '26.01.2026',
+                        untilDate: '04.02.2026',
+                        reason: undefined,
+                        points: '10'
+                },
+                {
+                        date: '13.02.2026',
+                        untilDate: '13.02.2026',
+                        reason: 'Arzt',
+                        points: '3'
+                }
+        ]);
 });
 
 test('get user info from html', async () => {
@@ -474,5 +570,23 @@ test('classify auth failure for parse mismatch', () => {
     expect(getAuthenticationFailureInfo(error)).toEqual({
         reason: 'UPSTREAM_RESPONSE_CHANGED',
         detail: 'The upstream login page format could not be parsed.'
+    });
+});
+
+test('expose publish metadata for upstream portals', () => {
+    expect(getPortalMetadata()).toMatchObject({
+        features: {
+            salPortal: expect.any(Boolean)
+        },
+        upstreams: {
+            legacy: {
+                baseUrl: expect.stringMatching(/^https?:\/\//)
+            },
+            sal: {
+                baseUrl: expect.stringMatching(/^https?:\/\//),
+                enabled: expect.any(Boolean),
+                mandators: expect.any(Array)
+            }
+        }
     });
 });

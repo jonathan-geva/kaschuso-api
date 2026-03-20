@@ -6,6 +6,7 @@ router.use('/grades', require('./grades'));
 router.use('/absences', require('./absences'));
 router.use('/unconfirmed-grades', require('./unconfirmed-grades'));
 router.use('/mandators', require('./mandators'));
+router.use('/meta', require('./meta'));
 
 router.use(function(err, req, res, next){
     if(err.name === 'ValidationError'){

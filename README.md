@@ -1,14 +1,15 @@
 # kaschuso-api
 
-API wrapper for `kaschuso.so.ch`.
+API wrapper for SchulNetz portals (KASCHUSO + SAL).
 
-This service exposes a small HTTP API to authenticate against KASCHUSO and fetch:
+This service exposes a small HTTP API to authenticate against upstream portals and fetch:
 
 - user info
 - grades
 - unconfirmed grades
 - absences
 - mandators (best effort, see caveats)
+- portal metadata for frontend bootstrapping
 
 ## Table of Contents
 
@@ -45,6 +46,7 @@ This project is an Express server (`app.js`) with route handlers in `routes/api/
 - Node.js 20+ (project Dockerfile uses Node 20-alpine)
 - npm or yarn
 - Internet access to `https://kaschuso.so.ch/`
+- Optional SAL access to `https://portal.sbl.ch/` when enabled
 
 ## Quick Start
 
@@ -98,6 +100,8 @@ Available variables:
 
 - `PORT`: server port (default `3001`)
 - `KASCHUSO_BASE_URL`: base URL (default `https://kaschuso.so.ch/`)
+- `SAL_BASE_URL`: SAL base URL (default `https://portal.sbl.ch/`)
+- `ENABLE_SAL_PORTAL`: enable SAL mandators in API responses (default `true`)
 - `FRONTEND_ORIGIN`: allowed CORS origin (required in production)
 - `JWT_SECRET`: token signing secret (required in production)
 - `API_SESSION_TTL_SECONDS`: token/session lifetime (default `900`)
@@ -111,6 +115,8 @@ Example `.env`:
 ```env
 PORT=3001
 KASCHUSO_BASE_URL=https://kaschuso.so.ch/
+SAL_BASE_URL=https://portal.sbl.ch/
+ENABLE_SAL_PORTAL=true
 FRONTEND_ORIGIN=https://app.example.com
 JWT_SECRET=change-me
 ```
@@ -200,6 +206,24 @@ Known alias slugs are normalized to canonical values in API output (for example 
 
 Note: The result is best effort. It is intended to stay useful after the upstream removed most public school links, but newly added schools or renamed mandators may still need a code update.
 
+When `ENABLE_SAL_PORTAL=true`, the curated SAL mandator `gymli` is included.
+
+### `GET /api/meta`
+
+Returns publish/runtime metadata for frontend bootstrap and environment diagnostics.
+
+Includes:
+
+- feature flags (for example `salPortal`)
+- configured upstream base URLs
+- effective mandator list (same source as `/api/mandators`)
+
+Example:
+
+```bash
+curl 'http://localhost:3001/api/meta'
+```
+
 ### `POST /api/authenticate`
 
 JSON body:
@@ -284,6 +308,12 @@ Get mandators:
 
 ```bash
 curl 'http://localhost:3001/api/mandators'
+```
+
+Get API metadata:
+
+```bash
+curl 'http://localhost:3001/api/meta'
 ```
 
 ## Response Shapes
@@ -440,6 +470,7 @@ Expected:
 - Current upstream often no longer exposes mandator links publicly.
 - The API now discovers slugs primarily from `robots.txt` and merges them with curated labels.
 - If your school is missing, use the known mandator directly from your school docs and add it to the fallback list in `services/kaschuso-api.js`.
+- For SAL rollout, `gymli` is exposed through curated config when `ENABLE_SAL_PORTAL=true`.
 
 ### Canonical mandator slugs
 

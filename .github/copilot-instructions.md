@@ -13,6 +13,7 @@
 **Local Development:**
 - `PORT=3001` (default)
 - `FRONTEND_ORIGIN=http://localhost:5173,http://127.0.0.1:5173` for Vite frontend
+- SAL rollout can be enabled via `ENABLE_SAL_PORTAL=true` (base: `SAL_BASE_URL=https://portal.sbl.ch/`), currently exposing `gymli`.
 
 ## Architecture
 - Entry point is `app.js` (Express app, middleware, error handlers, route mounting).
@@ -52,6 +53,7 @@ The upstream KASCHUSO portal requires:
 - Keep route files minimal and delegate business logic to `services/kaschuso-api.js`.
 - Prefer `async/await` and preserve existing error propagation (`catch(next)` in routes).
 - Keep API response shapes stable unless explicitly changing contract.
+- Use `/api/meta` for frontend bootstrap metadata (feature flags + effective mandators) rather than hardcoding deployment assumptions.
 - For scraping changes, support both legacy and current KASCHUSO HTML where practical.
 - When updating parsers, add or update fixture-based tests in `services/kaschuso-api.test.js`.
 - Sanitize fixtures before committing them: replace student names, teacher-coded course tokens, phone numbers, emails, and credentials with generic placeholders whenever possible.
@@ -66,6 +68,7 @@ The upstream KASCHUSO portal requires:
 - Cookie values may contain `=` signs; parse carefully with `indexOf('=')` not `split('=')[1]`.
 - Session cookies may rotate between requests; always merge and forward accumulated cookies.
 - The homepage `Ihre letzten Noten` table is a separate unconfirmed/latest-uploaded feed and should not be treated as identical to the full grades page semantics.
+- `gymli` lives on `portal.sbl.ch` and may render table detail rows with fewer columns than classic KASCHUSO pages; parser logic must remain resilient to both shapes.
 
 ## Security And Logging
 - This repository is publicly available on GitHub; never publish secrets, deploy hooks, tokens, credentials, private identifiers, or other privacy-related information in code, docs, tests, commits, or generated content.

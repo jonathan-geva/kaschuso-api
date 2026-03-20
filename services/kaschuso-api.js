@@ -6,12 +6,32 @@ axios.defaults.withCredentials = true;
 const qs = require('qs');
 const cheerio = require('cheerio');
 
-const BASE_URL   = process.env.KASCHUSO_BASE_URL || 'https://kaschuso.so.ch/';
-const FORM_URL   = BASE_URL + 'login/sls/auth?RequestedPage=%2f';
-const LOGIN_URL  = BASE_URL + 'login/sls/';
-const SES_JS_URL = BASE_URL + 'sil-bid-check/ses.js';
-const ROBOTS_URL = BASE_URL + 'robots.txt';
-const BASE_ORIGIN = new URL(BASE_URL).origin;
+const LEGACY_BASE_URL = process.env.KASCHUSO_BASE_URL || 'https://kaschuso.so.ch/';
+const SAL_BASE_URL = process.env.SAL_BASE_URL || 'https://portal.sbl.ch/';
+const ENABLE_SAL_PORTAL = String(process.env.ENABLE_SAL_PORTAL || 'true').toLowerCase() !== 'false';
+const ROBOTS_URL = LEGACY_BASE_URL + 'robots.txt';
+
+function buildAuthEndpoints(baseUrl) {
+    const origin = new URL(baseUrl).origin;
+    return {
+        formUrl: baseUrl + 'login/sls/auth?RequestedPage=%2f',
+        loginUrl: baseUrl + 'login/sls/',
+        sesJsUrl: baseUrl + 'sil-bid-check/ses.js',
+        origin: origin
+    };
+}
+
+function getBaseUrlForMandator(mandator) {
+    const normalized = normalizeMandatorName(mandator);
+    if (ENABLE_SAL_PORTAL && normalized === 'gymli') {
+        return SAL_BASE_URL;
+    }
+    return LEGACY_BASE_URL;
+}
+
+function buildMandatorUrl(mandator) {
+    return getBaseUrlForMandator(mandator) + mandator;
+}
 
 const MANDATOR_ALIASES = {
     kbssogr: 'kbsso'
@@ -21,59 +41,76 @@ const KNOWN_MANDATORS = [
     {
         name: 'bzwh',
         description: 'Bildungszentrum Wallierhof',
-        url: BASE_URL + 'bzwh'
+        url: buildMandatorUrl('bzwh')
     },
     {
         name: 'ebzol',
         description: 'Erwachsenenbildungszentrum Olten',
-        url: BASE_URL + 'ebzol'
+        url: buildMandatorUrl('ebzol')
     },
     {
         name: 'ebzso',
         description: 'Erwachsenenbildungszentrum Solothurn',
-        url: BASE_URL + 'ebzso'
+        url: buildMandatorUrl('ebzso')
     },
     {
         name: 'gibsgr',
         description: 'Gewerblich-industrielle Berufsfachschule Grenchen',
-        url: BASE_URL + 'gibsgr'
+        url: buildMandatorUrl('gibsgr')
     },
     {
         name: 'gibsol',
         description: 'Gewerblich-industrielle Berufsfachschule Olten',
-        url: BASE_URL + 'gibsol'
+        url: buildMandatorUrl('gibsol')
     },
     {
         name: 'gibsso',
         description: 'Gewerblich-industrielle Berufsfachschule Solothurn',
-        url: BASE_URL + 'gibsso'
+        url: buildMandatorUrl('gibsso')
     },
     {
         name: 'hfpo',
         description: 'Hoehere Fachschule Pflege Olten',
-        url: BASE_URL + 'hfpo'
+        url: buildMandatorUrl('hfpo')
     },
     {
         name: 'kbsol',
         description: 'Kaufmaennische Berufsfachschule Olten',
-        url: BASE_URL + 'kbsol'
+        url: buildMandatorUrl('kbsol')
     },
     {
         name: 'kbsso',
         description: 'Kaufmaennische Berufsfachschule Solothurn',
-        url: BASE_URL + 'kbsso'
+        url: buildMandatorUrl('kbsso')
     },
     {
         name: 'ksol',
         description: 'Kantonsschule Olten',
-        url: BASE_URL + 'ksol'
+        url: buildMandatorUrl('ksol')
     },
     {
         name: 'ksso',
         description: 'Kantonsschule Solothurn',
-        url: BASE_URL + 'ksso'
+        url: buildMandatorUrl('ksso')
+    },
+    {
+        name: 'gymli',
+        description: 'Gymnasium Liestal',
+        url: buildMandatorUrl('gymli')
     }
 ];
+
+function isMandatorEnabled(mandatorName) {
+    const normalized = normalizeMandatorName(mandatorName);
+    if (normalized === 'gymli') {
+        return ENABLE_SAL_PORTAL;
+    }
+    return true;
+}
+
+function getEnabledKnownMandators() {
+    return KNOWN_MANDATORS.filter(mandator => isMandatorEnabled(mandator.name));
+}
 
 
 const GRADES_PAGE_ID   = 21311;
@@ -98,7 +135,8 @@ var cookiesMap = [];
  * Returns the first cookie that is essential to make *any* request.
  */
 async function basicAuthenticate() {
-    return axios.get(BASE_URL, {
+    const baseUrl = arguments[0] || LEGACY_BASE_URL;
+    return axios.get(baseUrl, {
             withCredentials: true,
             headers: DEFAULT_HEADERS,
             maxRedirects: 0
@@ -114,20 +152,23 @@ function mergeCookies() {
 async function authenticate(mandator, username, password) {
     console.log('Authenticating: ' + username);
 
+    const baseUrl = getBaseUrlForMandator(mandator);
+    const authEndpoints = buildAuthEndpoints(baseUrl);
+
     // set basic cookies to request login page
-    var cookies = await basicAuthenticate();
+    var cookies = await basicAuthenticate(baseUrl);
 
     let headers = Object.assign({}, DEFAULT_HEADERS);
     headers['Cookie'] = toCookieHeaderString(cookies);
 
     // request login page
     const [formRes, sesJS] = await Promise.all([
-        axios.get(FORM_URL + mandator, {
+        axios.get(authEndpoints.formUrl + mandator, {
             withCredentials: true,
             headers: headers,
             maxRedirects: 0
         }),
-        axios.get(SES_JS_URL, {
+        axios.get(authEndpoints.sesJsUrl, {
             withCredentials: true,
             headers: headers,
             maxRedirects: 0
@@ -139,13 +180,13 @@ async function authenticate(mandator, username, password) {
 
     let loginHeaders = Object.assign({}, headers);
     loginHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
-    loginHeaders['Origin'] = BASE_ORIGIN;
-    loginHeaders['Referer'] = FORM_URL + mandator;
+    loginHeaders['Origin'] = authEndpoints.origin;
+    loginHeaders['Referer'] = authEndpoints.formUrl + mandator;
 
     // make login
     const loginPayload = getLoginPayloadFromHtml(formRes.data, username, password);
 
-    const loginRes = await axios.post(LOGIN_URL + getActionFromSesJs(sesJS.data), 
+    const loginRes = await axios.post(authEndpoints.loginUrl + getActionFromSesJs(sesJS.data), 
         qs.stringify(loginPayload),
         {
             withCredentials: true,
@@ -400,20 +441,28 @@ async function getGradesFromHtml(html) {
         if (detailRow) {
             $(detailRow).find('table.clean tr').toArray().forEach(detailTr => {
                 const detailTds = $(detailTr).find('td');
-                if (detailTds.length < 6 || $(detailTr).find('td.td_einzelpruefungen').length < 3) {
+                if (detailTds.length < 4) {
                     return;
                 }
 
-                const date = $(detailTds[1]).text().trim();
-                const gradeName = $(detailTds[2]).text().trim();
-                const valueCell = $(detailTds[3]);
+                const hasLegacySixColumnLayout = detailTds.length >= 6;
+                const dateIdx = hasLegacySixColumnLayout ? 1 : 0;
+                const nameIdx = hasLegacySixColumnLayout ? 2 : 1;
+                const valueIdx = hasLegacySixColumnLayout ? 3 : 2;
+                const weightingIdx = hasLegacySixColumnLayout ? 4 : 3;
+
+                const date = $(detailTds[dateIdx]).text().trim();
+                const gradeName = $(detailTds[nameIdx]).text().trim();
+                const valueCell = $(detailTds[valueIdx]);
                 const valueRaw = valueCell.text().replace(/\s+/g, ' ').trim();
                 const valueMatch = valueRaw.match(/-?\d+(?:[.,]\d+)?/);
                 const value = valueMatch ? valueMatch[0] : valueRaw;
-                const weighting = $(detailTds[4]).text().replace(/\s+/g, ' ').trim();
-                const classAverage = $(detailTds[5]).text().replace(/\s+/g, ' ').trim();
+                const weighting = ($(detailTds[weightingIdx]).text() || '').replace(/\s+/g, ' ').trim();
+                const classAverage = hasLegacySixColumnLayout
+                    ? ($(detailTds[5]).text() || '').replace(/\s+/g, ' ').trim()
+                    : average;
 
-                if (!value || value === '--') {
+                if (!date || !gradeName || !value || value === '--') {
                     return;
                 }
 
@@ -459,7 +508,7 @@ async function getAbsences(mandator, username, password) {
 async function getAbsencesFromHtml(html) {
     const $ = cheerio.load(html);
 
-    return await Promise.all($('#uebersicht_bloecke>page>div>form>table')
+    const legacyAbsences = await Promise.all($('#uebersicht_bloecke>page>div>form>table')
         // find table with grades for each subject
         .find('tbody>tr')
         .toArray()
@@ -487,6 +536,29 @@ async function getAbsencesFromHtml(html) {
                 reason: reason ? reason : undefined
             };
         }));
+
+    if (legacyAbsences.length > 0) {
+        return legacyAbsences;
+    }
+
+    // GymLi/schulNetz variant: summary table without editable reason fields.
+    return $('table.mdl-table--listtable').first().find('tr').toArray()
+        .map(row => $(row).find('td'))
+        .filter(cells => cells.length >= 5)
+        .map(cells => {
+            const date = $(cells[0]).text().trim();
+            const untilDate = $(cells[1]).text().trim();
+            const reason = $(cells[2]).text().trim();
+            const points = $(cells[4]).text().replace(/\s+/g, ' ').trim();
+
+            return {
+                date,
+                untilDate,
+                reason: reason || undefined,
+                points: points || undefined
+            };
+        })
+        .filter(entry => /\d{2}\.\d{2}\.\d{4}/.test(entry.date || ''));
 }
 
 async function getUnconfirmedGrades(mandator, username, password) {
@@ -558,7 +630,7 @@ async function getMandators() {
         }).then(res => getMandatorsFromRobotsTxt(res.data));
 
         if (robotsMandators.length > 0) {
-            return mergeMandatorLists(robotsMandators, KNOWN_MANDATORS);
+            return mergeMandatorLists(robotsMandators, getEnabledKnownMandators());
         }
     } catch (error) {
         console.warn('Could not load mandators from robots.txt', error.message);
@@ -566,19 +638,37 @@ async function getMandators() {
 
     try {
         let headers = Object.assign({}, DEFAULT_HEADERS);
-        headers['Cookie'] = toCookieHeaderString(await basicAuthenticate());
+        headers['Cookie'] = toCookieHeaderString(await basicAuthenticate(LEGACY_BASE_URL));
 
-        const discoveredMandators = await axios.get(BASE_URL, {
+        const discoveredMandators = await axios.get(LEGACY_BASE_URL, {
             withCredentials: true,
             headers: headers,
             maxRedirects: 5
         }).then(res => getMandatorsFromHtml(res.data));
 
-        return mergeMandatorLists(discoveredMandators, KNOWN_MANDATORS);
+        return mergeMandatorLists(discoveredMandators, getEnabledKnownMandators());
     } catch (error) {
         console.warn('Falling back to curated mandator list', error.message);
-        return mergeMandatorLists(KNOWN_MANDATORS);
+        return mergeMandatorLists(getEnabledKnownMandators());
     }
+}
+
+function getPortalMetadata() {
+    return {
+        features: {
+            salPortal: ENABLE_SAL_PORTAL
+        },
+        upstreams: {
+            legacy: {
+                baseUrl: LEGACY_BASE_URL
+            },
+            sal: {
+                baseUrl: SAL_BASE_URL,
+                enabled: ENABLE_SAL_PORTAL,
+                mandators: ENABLE_SAL_PORTAL ? ['gymli'] : []
+            }
+        }
+    };
 }
 
 function getMandatorsFromRobotsTxt(robotsTxt) {
@@ -603,7 +693,7 @@ function getMandatorsFromRobotsTxt(robotsTxt) {
     return slugs.map(name => ({
         name,
         description: name,
-        url: BASE_URL + name
+        url: buildMandatorUrl(name)
     }));
 }
 
@@ -620,7 +710,9 @@ async function getMandatorsFromHtml(html) {
                 return undefined;
             }
 
-            if (!/^https?:\/\//.test(url) || !url.includes('kaschuso.so.ch')) {
+            const supportsLegacyHost = /^https?:\/\//.test(url) && url.includes('kaschuso.so.ch');
+            const supportsSalHost = ENABLE_SAL_PORTAL && /^https?:\/\//.test(url) && url.includes('portal.sbl.ch');
+            if (!supportsLegacyHost && !supportsSalHost) {
                 return undefined;
             }
 
@@ -662,7 +754,7 @@ function mergeMandatorLists() {
             mandators.set(normalizedMandator.name, {
                 name: existing.name,
                 description: pickBestMandatorDescription(existing.description, normalizedMandator.description, normalizedMandator.name),
-                url: BASE_URL + normalizedMandator.name
+                url: normalizedMandator.url || buildMandatorUrl(normalizedMandator.name)
             });
         });
 
@@ -696,7 +788,7 @@ function normalizeMandator(mandator) {
     return {
         name,
         description,
-        url: BASE_URL + name
+        url: mandator.url || buildMandatorUrl(name)
     };
 }
 
@@ -714,7 +806,7 @@ function pickBestMandatorDescription(existingDescription, incomingDescription, n
 }
 
 function findUrlByPageid(mandator, html, pageid) {
-    return BASE_URL + mandator + '/' + html.match('"(index\\.php\\?pageid=' + pageid + '[^"]*)"')[1];
+    return getBaseUrlForMandator(mandator) + mandator + '/' + html.match('"(index\\.php\\?pageid=' + pageid + '[^"]*)"')[1];
 }
 
 async function getHomepageAndHeaders(mandator, username, password) {
@@ -722,8 +814,9 @@ async function getHomepageAndHeaders(mandator, username, password) {
     
     let headers = Object.assign({}, DEFAULT_HEADERS);
     headers['Cookie'] = toCookieHeaderString(cookies);
+    const baseUrl = getBaseUrlForMandator(mandator);
     
-    return axios.get(BASE_URL + mandator + '/loginto.php', {
+    return axios.get(baseUrl + mandator + '/loginto.php', {
             withCredentials: true,
             headers: headers,
             maxRedirects: 0
@@ -747,8 +840,9 @@ async function getCookies(mandator, username, password) {
         // check if cookies are valid
         let headers = Object.assign({}, DEFAULT_HEADERS);
         headers['Cookie'] = toCookieHeaderString(cookies);
+        const baseUrl = getBaseUrlForMandator(mandator);
         
-        const homeRes = await axios.get(BASE_URL + mandator + '/loginto.php', {
+        const homeRes = await axios.get(baseUrl + mandator + '/loginto.php', {
             withCredentials: true,
             headers: headers,
             maxRedirects: 0
@@ -851,6 +945,7 @@ module.exports = {
     getGrades,
     getAbsences,
     getMandators,
+    getPortalMetadata,
     getUnconfirmedGrades,
     // for testing 
     getCookiesFromHeaders,
