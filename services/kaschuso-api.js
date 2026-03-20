@@ -489,6 +489,64 @@ async function getAbsencesFromHtml(html) {
         }));
 }
 
+async function getUnconfirmedGrades(mandator, username, password) {
+    console.log('Getting unconfirmed grades for: ' + username);
+    
+    const { headers, homeData } = await getHomepageAndHeaders(mandator, username, password);
+
+    return await getUnconfirmedGradesFromHtml(homeData);
+}
+
+async function getUnconfirmedGradesFromHtml(html) {
+    const $ = cheerio.load(html);
+
+    const grades = [];
+
+    // Find the table containing "Ihre letzten Noten" (Your latest grades/unconfirmed grades)
+    // Look for tables with mdl-data-table class
+    const tables = $('table.mdl-data-table').toArray();
+
+    for (const tableElement of tables) {
+        const $table = $(tableElement);
+        const rows = $table.find('tbody > tr').toArray();
+
+        // Check if this is the unconfirmed grades table by verifying structure
+        // Should have exactly 4 columns: subject, name, date, value
+        if (rows.length === 0) continue;
+
+        const firstRow = $(rows[0]).find('td');
+        if (firstRow.length !== 4) continue;
+
+        // Parse all rows in this table as potential unconfirmed grades
+        rows.forEach(row => {
+            const cells = $(row).find('td.mdl-data-table__cell--non-numeric');
+            if (cells.length !== 4) return;
+
+            const subject = $(cells[0]).text().trim();
+            const name = $(cells[1]).text().trim();
+            const date = $(cells[2]).text().trim();
+            const value = $(cells[3]).text().trim();
+
+            if (subject && name && date && value) {
+                grades.push({
+                    subject: subject,
+                    name: name,
+                    date: date,
+                    value: value
+                });
+            }
+        });
+
+        // If we found grades in this table, return them
+        // (the first table with the right structure should be the unconfirmed grades)
+        if (grades.length > 0) {
+            return grades;
+        }
+    }
+
+    return grades;
+}
+
 async function getMandators() {
     console.log('Fetching all mandators');
 
@@ -793,6 +851,7 @@ module.exports = {
     getGrades,
     getAbsences,
     getMandators,
+    getUnconfirmedGrades,
     // for testing 
     getCookiesFromHeaders,
     toCookieHeaderString,
@@ -803,6 +862,7 @@ module.exports = {
     getMandatorsFromHtml,
     getAbsencesFromHtml,
     getGradesFromHtml,
+    getUnconfirmedGradesFromHtml,
     getUserInfoFromHtml,
     getCurrentRequestedPageFromHtml,
     getLoginPayloadFromHtml,

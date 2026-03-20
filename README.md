@@ -6,6 +6,7 @@ This service exposes a small HTTP API to authenticate against KASCHUSO and fetch
 
 - user info
 - grades
+- unconfirmed grades
 - absences
 - mandators (best effort, see caveats)
 
@@ -225,6 +226,14 @@ Headers:
 
 Returns parsed subjects and grades.
 
+### `GET /api/unconfirmed-grades`
+
+Headers:
+
+- `Authorization: Bearer <token>`
+
+Returns the homepage `Ihre letzten Noten` feed, representing grades that are still awaiting user confirmation and acting as a latest-uploaded overview.
+
 ### `GET /api/absences`
 
 Headers:
@@ -248,6 +257,13 @@ Get grades:
 ```bash
 curl 'http://localhost:3001/api/grades' \
   -H 'Authorization: Bearer YOUR_TOKEN'
+```
+
+Get unconfirmed grades:
+
+```bash
+curl 'http://localhost:3001/api/unconfirmed-grades' \
+	-H 'Authorization: Bearer YOUR_TOKEN'
 ```
 
 Get absences:
@@ -317,6 +333,23 @@ Grades response:
 					"average": "5.2"
 				}
 			]
+		}
+	]
+}
+```
+
+Unconfirmed grades response:
+
+```json
+{
+	"mandator": "example-school",
+	"username": "student.username",
+	"grades": [
+		{
+			"subject": "COURSE-CODE",
+			"name": "Assessment title",
+			"date": "01.01.2026",
+			"value": "5.5"
 		}
 	]
 }
@@ -439,6 +472,10 @@ Project layout:
 - `services/kaschuso-api.js`: scraping/authentication logic
 - `__test__/`: fixtures and parser tests
 
+Fixture guidance:
+
+- Keep fixtures privacy-safe and replace personal names, teacher-coded class identifiers, contact details, and credentials with generic placeholders whenever they are not required for parser coverage.
+
 Run tests:
 
 ```bash
@@ -463,6 +500,7 @@ docker run --rm -p 3001:3001 --env-file .env kaschuso-api
 
 - Credentials are accepted only via `POST /api/authenticate` JSON body.
 - Protected endpoints require `Authorization: Bearer <token>`.
+- `GET /api/unconfirmed-grades` follows the same bearer-token protection as the other protected data endpoints.
 - Do not send credentials in query parameters.
 - Always deploy behind HTTPS and set `JWT_SECRET` + `FRONTEND_ORIGIN` in production.
 - Do not commit secrets or real credentials.

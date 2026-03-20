@@ -54,6 +54,7 @@ The upstream KASCHUSO portal requires:
 - Keep API response shapes stable unless explicitly changing contract.
 - For scraping changes, support both legacy and current KASCHUSO HTML where practical.
 - When updating parsers, add or update fixture-based tests in `services/kaschuso-api.test.js`.
+- Sanitize fixtures before committing them: replace student names, teacher-coded course tokens, phone numbers, emails, and credentials with generic placeholders whenever possible.
 
 ## Scraping Pitfalls
 - Do not reintroduce legacy browser fingerprint headers in `DEFAULT_HEADERS`; upstream can return `403`.
@@ -64,11 +65,13 @@ The upstream KASCHUSO portal requires:
 - Cheerio often normalizes `tbody`; prefer selectors that work with inserted table wrappers.
 - Cookie values may contain `=` signs; parse carefully with `indexOf('=')` not `split('=')[1]`.
 - Session cookies may rotate between requests; always merge and forward accumulated cookies.
+- The homepage `Ihre letzten Noten` table is a separate unconfirmed/latest-uploaded feed and should not be treated as identical to the full grades page semantics.
 
 ## Security And Logging
 - This repository is publicly available on GitHub; never publish secrets, deploy hooks, tokens, credentials, private identifiers, or other privacy-related information in code, docs, tests, commits, or generated content.
 - Credentials must be accepted only via `POST /api/authenticate` JSON body (never via query params).
 - Protected endpoints must require bearer token auth and must reject credential query params.
+- `GET /api/unconfirmed-grades` follows the same bearer-token protection and must not accept credentials via query params.
 - Production deployments require explicit `JWT_SECRET` and `FRONTEND_ORIGIN` configuration.
 - `FRONTEND_ORIGIN` may contain a comma-separated allowlist; CORS responses must echo a single matching origin, never a comma-joined value.
 - For local Vite development, support both `http://localhost:5173` and `http://127.0.0.1:5173` where practical.

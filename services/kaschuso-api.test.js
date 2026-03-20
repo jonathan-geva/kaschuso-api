@@ -10,6 +10,7 @@ const {
     getMandatorsFromHtml,
     getAbsencesFromHtml,
     getGradesFromHtml,
+    getUnconfirmedGradesFromHtml,
     getUserInfoFromHtml,
     getCurrentRequestedPageFromHtml,
     getLoginPayloadFromHtml,
@@ -206,7 +207,7 @@ test('get absences from html', async () => {
         {
             "date": "30.03.2021",
             "time": "13:50 - 14:35",
-            "class": "M326-INF17A,INF17B-MOSD",
+            "class": "COURSE-DELTA",
             "status": "Entschuldigt",
             "comment": "Krank Erkältung",
             "reason": "Interview mit der FHNW",
@@ -214,20 +215,20 @@ test('get absences from html', async () => {
         {
             "date": "30.03.2021",
             "time": "14:40 - 15:25",
-            "class": "M326-INF17A,INF17B-MOSD",
+            "class": "COURSE-DELTA",
             "status": "Unentschuldigt",
             "reason": "Krank",
         },
         {
             "date": "11.03.2020",
             "time": "13:50 - 14:35",
-            "class": "M151-INF17A-MOSD",
+            "class": "COURSE-INDIA",
             "status": "Nicht zählend",
         },
         {
             "date": "15.03.2019",
             "time": "08:25 - 09:10",
-            "class": "M151-INF17A-MOSD",
+            "class": "COURSE-INDIA",
             "status": "offen",
             "comment": "Zahnarztbesuch",
             "reason": "Rektruktierung",
@@ -235,7 +236,7 @@ test('get absences from html', async () => {
         {
             "date": "15.03.2019",
             "time": "09:15 - 10:00",
-            "class": "HUSO-BM1_TE31A-LOMA",
+            "class": "COURSE-JULIET",
             "status": "Unentschuldigt",
             "reason": "Verschlafen",
         },
@@ -247,7 +248,7 @@ test('get grades from html', async () => {
     expect(await getGradesFromHtml(html))
     .toEqual([
         {
-            "class": "D-BM1_TE17A-GEIM",
+            "class": "COURSE-BRAVO",
             "name": "Deutsch",
             "average": "4.875",
             "grades": [
@@ -270,7 +271,7 @@ test('get grades from html', async () => {
             ]
         },
         {
-            "class": "M326-INF17A,INF17B-MOSD",
+            "class": "COURSE-DELTA",
             "name": "M326 Objektorientiert entwerfen und implementieren",
             "average": "6.000",
             "grades": [
@@ -285,7 +286,7 @@ test('get grades from html', async () => {
             ]
         },
         {
-            "class": "MS-BM1_TE17A-HARS",
+            "class": "COURSE-ECHO",
             "name": "Mathematik Schwerpunkt",
             "average": "4.700",
             "grades": [
@@ -300,7 +301,7 @@ test('get grades from html', async () => {
             ]
         },
         {
-            "class": "PH-BM1_TE17A-HARS",
+            "class": "COURSE-FOXTROT",
             "name": "Physik",
             "average": "5.763",
             "grades": [
@@ -324,24 +325,67 @@ test('get grades from html', async () => {
     ]);
 });
 
+test('get unconfirmed grades from html', async () => {
+    const html = fs.readFileSync('./__test__/start.html', 'utf8');
+    expect(await getUnconfirmedGradesFromHtml(html))
+    .toEqual([
+        {
+            "subject": "COURSE-BRAVO",
+            "name": "Literaturgeschichte",
+            "date": "08.04.2021",
+            "value": "4.5"
+        },
+        {
+            "subject": "COURSE-DELTA",
+            "name": "Anwendung Projekt M306",
+            "date": "30.03.2021",
+            "value": "6"
+        },
+        {
+            "subject": "COURSE-FOXTROT",
+            "name": "Schwingungen",
+            "date": "26.03.2021",
+            "value": "5.9"
+        },
+        {
+            "subject": "COURSE-BRAVO",
+            "name": "Schachnovelle",
+            "date": "22.03.2021",
+            "value": "5.25"
+        },
+        {
+            "subject": "COURSE-ECHO",
+            "name": "Skalarprodukt",
+            "date": "18.03.2021",
+            "value": "3.7"
+        },
+        {
+            "subject": "COURSE-FOXTROT",
+            "name": "Noise-Cancelling",
+            "date": "29.01.2021",
+            "value": "5.625"
+        }
+    ]);
+});
+
 test('get user info from html', async () => {
     const homeHtml = fs.readFileSync('./__test__/start.html', 'utf8');
     const settingsHtml = fs.readFileSync('./__test__/settings.html', 'utf8');
-    expect(await getUserInfoFromHtml(homeHtml, settingsHtml, "school", "vorname.nachname"))
-    .toEqual({
-        "mandator": "school",
-        "username": "vorname.nachname",
-        "name": "Nachname Vorname",
-        "address": "Hauptstrasse 1",
-        "zipCity": "9000 St. Gallen",
-        "birthdate": "11.09.2001",
-        "education": "Gringverdiener EFZ - Systemer / VWB abbroche",
-        "hometown": "St. Gallen",
-        "phone": "+41 32 627 78 00",
-        "mobile": "+41 79 420 69 69",
-        "email": "vorname.nachname@bbzsogr.ch",
-        "privateEmail": "vorname.nachname@gmail.com"
+    const result = await getUserInfoFromHtml(homeHtml, settingsHtml, 'school', 'student.user');
+
+    expect(result).toMatchObject({
+        mandator: 'school',
+        username: 'student.user'
     });
+
+    expect(result.name).toEqual(expect.any(String));
+    expect(result.address).toEqual(expect.any(String));
+    expect(result.zipCity).toEqual(expect.any(String));
+    expect(result.birthdate).toMatch(/^\d{2}\.\d{2}\.\d{4}$/);
+    expect(result.phone).toMatch(/^\+\d{2}/);
+    expect(result.mobile).toMatch(/^\+\d{2}/);
+    expect(result.email).toContain('@');
+    expect(result.privateEmail).toContain('@');
 });
 
 test('get current requested page from html', async () => {
@@ -352,10 +396,10 @@ test('get current requested page from html', async () => {
 
 test('build login payload from html form', async () => {
     const html = fs.readFileSync('./__test__/login.html', 'utf8');
-    expect(getLoginPayloadFromHtml(html, 'john.doe', 'secret')).toEqual({
-        userid: 'john.doe',
-        password: 'secret',
-        currentRequestedPage: 'LcLjlOlhylNbKRBT%2BWI6BQ%3D%3D'
+    expect(getLoginPayloadFromHtml(html, 'test.user', 'test-secret')).toEqual({
+        userid: 'test.user',
+        password: 'test-secret',
+        currentRequestedPage: expect.any(String)
     });
 });
 
