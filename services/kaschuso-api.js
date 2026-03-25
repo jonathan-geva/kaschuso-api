@@ -1,4 +1,8 @@
 const cryptoRandomString = require('crypto-random-string');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
 
 const axios = require('axios').default;
 axios.defaults.withCredentials = true;
@@ -9,6 +13,9 @@ const cheerio = require('cheerio');
 const LEGACY_BASE_URL = process.env.KASCHUSO_BASE_URL || 'https://kaschuso.so.ch/';
 const SAL_BASE_URL = process.env.SAL_BASE_URL || 'https://portal.sbl.ch/';
 const ENABLE_SAL_PORTAL = String(process.env.ENABLE_SAL_PORTAL || 'true').toLowerCase() !== 'false';
+const SAL_DEBUG = String(process.env.SAL_DEBUG || 'false').toLowerCase() === 'true';
+const SAL_USE_RESOURCE_INFO = String(process.env.SAL_USE_RESOURCE_INFO || 'false').toLowerCase() === 'true';
+const SAL_TRY_REWRITTEN_LAUNCH = String(process.env.SAL_TRY_REWRITTEN_LAUNCH || 'false').toLowerCase() === 'true';
 const ROBOTS_URL = LEGACY_BASE_URL + 'robots.txt';
 
 function buildAuthEndpoints(baseUrl) {
@@ -31,6 +38,10 @@ function getBaseUrlForMandator(mandator) {
 
 function buildMandatorUrl(mandator) {
     return getBaseUrlForMandator(mandator) + mandator;
+}
+
+function isSalMandator(mandator) {
+    return getBaseUrlForMandator(mandator) === SAL_BASE_URL;
 }
 
 const MANDATOR_ALIASES = {
@@ -116,8 +127,12 @@ function getEnabledKnownMandators() {
 const GRADES_PAGE_ID   = 21311;
 const ABSENCES_PAGE_ID = 21111;
 const SETTINGS_PAGE_ID = 22500;
+const SAL_WEBTOP_URL = '/vdesk/webtop.eui?webtop=/Common/schulportal_wt&webtop_type=webtop_full';
+const SAL_RESOURCE_LIST_URL = '/vdesk/resource_list.xml?resourcetype=res';
+const SAL_RESOURCE_INFO_URL = '/vdesk/resource_info_v2.xml';
+const SAL_COOKIE_JAR_RAW_KEY = '__salCookieJarRaw';
 
-const SES_PARAM_REGEX = /var bid = getBid\('([^']*?)'/;
+const SES_PARAM_REGEX = /var\s+bid\s*=\s*getBid\(['\"]([^'\"]+?)['\"]\)/;
 
 const DEFAULT_HEADERS = {
     // Keep this header set minimal: kaschuso currently blocks some legacy/fingerprinting headers.
@@ -136,7 +151,11 @@ var cookiesMap = [];
  */
 async function basicAuthenticate() {
     const baseUrl = arguments[0] || LEGACY_BASE_URL;
-    return axios.get(baseUrl, {
+    const bootstrapUrl = baseUrl === SAL_BASE_URL
+        ? baseUrl + 'my.policy'
+        : baseUrl;
+
+    return axios.get(bootstrapUrl, {
             withCredentials: true,
             headers: DEFAULT_HEADERS,
             maxRedirects: 0
@@ -152,6 +171,10 @@ function mergeCookies() {
 async function authenticate(mandator, username, password) {
     console.log('Authenticating: ' + username);
 
+    if (isSalMandator(mandator)) {
+        return authenticateViaSalPortal(mandator, username, password);
+    }
+
     const baseUrl = getBaseUrlForMandator(mandator);
     const authEndpoints = buildAuthEndpoints(baseUrl);
 
@@ -161,19 +184,50 @@ async function authenticate(mandator, username, password) {
     let headers = Object.assign({}, DEFAULT_HEADERS);
     headers['Cookie'] = toCookieHeaderString(cookies);
 
-    // request login page
-    const [formRes, sesJS] = await Promise.all([
-        axios.get(authEndpoints.formUrl + mandator, {
-            withCredentials: true,
-            headers: headers,
-            maxRedirects: 0
-        }),
-        axios.get(authEndpoints.sesJsUrl, {
-            withCredentials: true,
-            headers: headers,
-            maxRedirects: 0
-        })
-    ]);
+    // Legacy KASCHUSO typically expects RequestedPage=%2f{mandator}, while SAL portals
+    // may serve the login form at RequestedPage=%2f without mandator in the query.
+    let resolvedFormUrl = authEndpoints.formUrl + mandator;
+    let formRes;
+    let sesJS;
+
+    try {
+        [formRes, sesJS] = await Promise.all([
+            axios.get(resolvedFormUrl, {
+                withCredentials: true,
+                headers: headers,
+                maxRedirects: 5
+            }),
+            axios.get(authEndpoints.sesJsUrl, {
+                withCredentials: true,
+                headers: headers,
+                maxRedirects: 5
+            })
+        ]);
+    } catch (error) {
+        const shouldRetryWithoutMandator =
+            error &&
+            error.response &&
+            error.response.status === 404 &&
+            getBaseUrlForMandator(mandator) === SAL_BASE_URL;
+
+        if (!shouldRetryWithoutMandator) {
+            throw error;
+        }
+
+        resolvedFormUrl = authEndpoints.formUrl;
+        [formRes, sesJS] = await Promise.all([
+            axios.get(resolvedFormUrl, {
+                withCredentials: true,
+                headers: headers,
+                maxRedirects: 5
+            }),
+            axios.get(authEndpoints.sesJsUrl, {
+                withCredentials: true,
+                headers: headers,
+                maxRedirects: 5
+            })
+        ]);
+    }
 
     cookies = mergeCookies(cookies, formRes.cookies, sesJS.cookies);
     headers['Cookie'] = toCookieHeaderString(cookies);
@@ -181,7 +235,7 @@ async function authenticate(mandator, username, password) {
     let loginHeaders = Object.assign({}, headers);
     loginHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
     loginHeaders['Origin'] = authEndpoints.origin;
-    loginHeaders['Referer'] = authEndpoints.formUrl + mandator;
+    loginHeaders['Referer'] = resolvedFormUrl;
 
     // make login
     const loginPayload = getLoginPayloadFromHtml(formRes.data, username, password);
@@ -208,6 +262,314 @@ async function authenticate(mandator, username, password) {
     storeCookies(mandator, username, cookies);
 
     return cookies;
+}
+
+async function authenticateViaSalPortal(mandator, username, password) {
+    try {
+        const curlCookies = authenticateViaSalPortalWithCurl(username, password);
+        storeCookies(mandator, username, curlCookies);
+        return curlCookies;
+    } catch (curlError) {
+        console.warn('SAL curl fallback unavailable or failed, falling back to axios flow', {
+            message: curlError && curlError.message,
+            code: curlError && curlError.code
+        });
+    }
+
+    const baseUrl = getBaseUrlForMandator(mandator);
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+        // Clear potentially stale BIG-IP sessions before starting a new login flow.
+        let cookies = {};
+        const hangupFlow = await requestWithRedirectCookieCapture({
+            method: 'get',
+            url: baseUrl + 'vdesk/hangup.php3',
+            headers: DEFAULT_HEADERS,
+            cookies: cookies,
+            maxHops: 5
+        });
+
+        cookies = mergeCookies(cookies, hangupFlow.cookies);
+
+        let headers = Object.assign({}, DEFAULT_HEADERS);
+        headers['Cookie'] = toCookieHeaderString(cookies);
+
+        // Bootstrap the modern login flow and preserve redirect-issued cookies.
+        const loginPageFlow = await requestWithRedirectCookieCapture({
+            method: 'get',
+            url: baseUrl + 'my.policy',
+            headers: headers,
+            cookies: cookies,
+            maxHops: 5
+        });
+
+        cookies = mergeCookies(cookies, loginPageFlow.cookies);
+        headers['Cookie'] = toCookieHeaderString(cookies);
+
+        const loginHeaders = Object.assign({}, headers, {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': new URL(baseUrl).origin,
+            'Referer': baseUrl + 'my.policy'
+        });
+
+        const loginRes = await axios.post(baseUrl + 'my.policy',
+            qs.stringify({
+                username: username,
+                password: password
+            }),
+            {
+                withCredentials: true,
+                headers: loginHeaders,
+                maxRedirects: 0
+            }
+        );
+
+        const location = (loginRes && loginRes.locationValue) || '';
+        const appearsAuthenticated = Boolean(location && /\/saml\/idp\/res\?id=/.test(location));
+
+        if (appearsAuthenticated) {
+            cookies = mergeCookies(cookies, loginRes.cookies);
+            storeCookies(mandator, username, cookies);
+            return cookies;
+        }
+
+        const shouldRetryFreshSession = attempt === 0 && /\/my\.logout\.php3\?errorcode=19/.test(location);
+        if (shouldRetryFreshSession) {
+            continue;
+        }
+
+        const error = new Error('SAL portal login did not yield expected SAML redirect');
+        error.name = 'AuthenticationError';
+        error.authDiagnostics = buildAuthenticationDiagnostics(loginRes);
+        console.warn('SAL authentication rejected by upstream', error.authDiagnostics);
+        throw error;
+    }
+
+    const exhaustedError = new Error('SAL portal login retry attempts exhausted');
+    exhaustedError.name = 'AuthenticationError';
+    throw exhaustedError;
+}
+
+function runCurl(args) {
+    const normalizedArgs = Array.isArray(args) ? args.slice() : [];
+    if (!normalizedArgs.includes('--connect-timeout')) {
+        normalizedArgs.unshift('8');
+        normalizedArgs.unshift('--connect-timeout');
+    }
+    if (!normalizedArgs.includes('--max-time')) {
+        normalizedArgs.unshift('15');
+        normalizedArgs.unshift('--max-time');
+    }
+    if (!normalizedArgs.includes('-A') && !normalizedArgs.includes('--user-agent')) {
+        normalizedArgs.unshift(DEFAULT_HEADERS['User-Agent']);
+        normalizedArgs.unshift('-A');
+    }
+
+    return spawnSync('curl', normalizedArgs, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+}
+
+function parseCookieJar(cookieJarPath) {
+    const cookies = {};
+    const raw = fs.readFileSync(cookieJarPath, 'utf8');
+    cookies[SAL_COOKIE_JAR_RAW_KEY] = raw;
+
+    raw.split(/\r?\n/).forEach(line => {
+        if (!line || line.startsWith('#') && !line.startsWith('#HttpOnly_')) {
+            return;
+        }
+
+        const normalized = line.startsWith('#HttpOnly_') ? line.slice('#HttpOnly_'.length) : line;
+        const parts = normalized.split(/\t+/);
+        if (parts.length < 7) {
+            return;
+        }
+
+        const name = parts[5];
+        const value = parts[6];
+        if (!name) {
+            return;
+        }
+
+        cookies[name] = value;
+    });
+
+    return cookies;
+}
+
+function writeCookieJar(cookieJarPath, cookies, baseUrl) {
+    const rawCookieJar = cookies && cookies[SAL_COOKIE_JAR_RAW_KEY];
+    if (typeof rawCookieJar === 'string' && rawCookieJar.trim()) {
+        fs.writeFileSync(cookieJarPath, rawCookieJar, 'utf8');
+        return;
+    }
+
+    const domain = new URL(baseUrl || SAL_BASE_URL).hostname;
+    const lines = [
+        '# Netscape HTTP Cookie File'
+    ];
+
+    Object.entries(cookies || {}).forEach(([name, value]) => {
+        if (name === SAL_COOKIE_JAR_RAW_KEY) {
+            return;
+        }
+        if (!name) {
+            return;
+        }
+
+        lines.push([domain, 'TRUE', '/', 'FALSE', '0', name, value || ''].join('\t'));
+    });
+
+    fs.writeFileSync(cookieJarPath, lines.join('\n') + '\n', 'utf8');
+}
+
+function fetchPageViaCurl(url, cookies, options) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaschuso-sal-page-'));
+    const cookieJarPath = path.join(tempDir, 'cookies.txt');
+    const headersPath = path.join(tempDir, 'headers.txt');
+    const bodyPath = path.join(tempDir, 'body.html');
+
+    try {
+        writeCookieJar(cookieJarPath, cookies || {}, url);
+
+        const args = [
+            '-sS',
+            '-L',
+            '-b', cookieJarPath,
+            '-c', cookieJarPath,
+            '-D', headersPath,
+            '-o', bodyPath
+        ];
+
+        if (options && options.referer) {
+            args.push('-H', 'Referer: ' + options.referer);
+        }
+        if (options && options.headers) {
+            Object.entries(options.headers).forEach(([key, value]) => {
+                args.push('-H', `${key}: ${value}`);
+            });
+        }
+
+        args.push(url);
+
+        const result = runCurl(args);
+        if (result.status !== 0) {
+            throw new Error('curl protected page fetch failed: ' + (result.stderr || result.stdout || 'unknown error'));
+        }
+
+        const body = fs.existsSync(bodyPath) ? fs.readFileSync(bodyPath, 'utf8') : '';
+        const mergedCookies = parseCookieJar(cookieJarPath);
+
+        return {
+            data: String(body || ''),
+            cookies: mergedCookies
+        };
+    } finally {
+        try {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {
+            // Best-effort cleanup only.
+        }
+    }
+}
+
+function authenticateViaSalPortalWithCurl(username, password) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaschuso-sal-auth-'));
+    const cookieJarPath = path.join(tempDir, 'cookies.txt');
+    const headersPath = path.join(tempDir, 'headers.txt');
+
+    try {
+        let result = runCurl([
+            '-sS',
+            '-L',
+            '-c', cookieJarPath,
+            SAL_BASE_URL + 'vdesk/hangup.php3'
+        ]);
+
+        if (result.status !== 0) {
+            throw new Error('curl hangup failed: ' + (result.stderr || result.stdout || 'unknown error'));
+        }
+
+        result = runCurl([
+            '-sS',
+            '-L',
+            '-b', cookieJarPath,
+            '-c', cookieJarPath,
+            SAL_BASE_URL + 'my.policy'
+        ]);
+
+        if (result.status !== 0) {
+            throw new Error('curl login bootstrap failed: ' + (result.stderr || result.stdout || 'unknown error'));
+        }
+
+        result = runCurl([
+            '-sS',
+            '-D', headersPath,
+            '-o', '/dev/null',
+            '-b', cookieJarPath,
+            '-c', cookieJarPath,
+            '-H', 'Content-Type: application/x-www-form-urlencoded',
+            '--data-urlencode', 'username=' + username,
+            '--data-urlencode', 'password=' + password,
+            SAL_BASE_URL + 'my.policy'
+        ]);
+
+        if (result.status !== 0) {
+            throw new Error('curl login submit failed: ' + (result.stderr || result.stdout || 'unknown error'));
+        }
+
+        const headers = fs.existsSync(headersPath) ? fs.readFileSync(headersPath, 'utf8') : '';
+        const locationMatch = headers.match(/^Location:\s*(.+)$/im);
+        const locationValue = locationMatch ? locationMatch[1].trim() : '';
+        const appearsAuthenticated = /\/saml\/idp\/res\?id=/.test(locationValue);
+
+        if (!appearsAuthenticated) {
+            const cookies = parseCookieJar(cookieJarPath);
+            const error = new Error('SAL curl login did not yield expected SAML redirect');
+            error.name = 'AuthenticationError';
+            error.authDiagnostics = {
+                status: (headers.match(/^HTTP\/[^\s]+\s+(\d{3})/m) || [])[1] || null,
+                hasLocationHeader: Boolean(locationValue),
+                locationValue: locationValue || null,
+                cookieNames: Object.keys(cookies)
+            };
+            throw error;
+        }
+
+        // Continue the authenticated flow by following the redirect chain from the
+        // first successful login response. Re-posting credentials can restart/poison
+        // policy evaluation on some F5 setups.
+        const redirectUrl = new URL(locationValue, SAL_BASE_URL).toString();
+        result = runCurl([
+            '-sS',
+            '-L',
+            '-b', cookieJarPath,
+            '-c', cookieJarPath,
+            redirectUrl
+        ]);
+
+        if (result.status !== 0) {
+            throw new Error('curl login redirect follow failed: ' + (result.stderr || result.stdout || 'unknown error'));
+        }
+
+        if (SAL_DEBUG) {
+            const debugFile = path.join(os.tmpdir(), `kaschuso-sal-auth-final.html`);
+            fs.writeFileSync(debugFile, result.stdout || '', 'utf8');
+            console.warn('SAL debug: Auth final page dumped to', debugFile);
+        }
+
+        const cookies = parseCookieJar(cookieJarPath);
+
+        return cookies;
+    } finally {
+        try {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {
+            // Best-effort cleanup only.
+        }
+    }
 }
 
 function getAuthenticationFailureInfo(error) {
@@ -292,22 +654,27 @@ function getLoginPayloadFromHtml(html, username, password) {
 }
 
 function getActionFromSesJs(html) {
-    const param = html.match(SES_PARAM_REGEX)[1];
+    const match = String(html || '').match(SES_PARAM_REGEX);
+    if (!match || !match[1]) {
+        throw new TypeError('Could not parse BID token from ses.js');
+    }
+
+    const param = match[1];
     return 'auth?' + param + '=' + cryptoRandomString({ length: 32, type: 'hex' });
 }
 
 async function getUserInfo(mandator, username, password) {
     console.log('Getting user info for: ' + username);
 
-    const { headers, homeData } = await getHomepageAndHeaders(mandator, username, password);
+    const { headers, homeData, cookies } = await getHomepageAndHeaders(mandator, username, password);
+    const settingsUrl = findUrlByPageid(mandator, homeData, SETTINGS_PAGE_ID);
+    const settingsPage = await getProtectedPageForMandator(mandator, settingsUrl, cookies, headers);
 
-    const settingsRes = await axios.get(findUrlByPageid(mandator, homeData, SETTINGS_PAGE_ID), {
-        withCredentials: true,
-        headers: headers,
-        maxRedirects: 0
-    });
+    if (settingsPage.cookies) {
+        storeCookies(mandator, username, settingsPage.cookies);
+    }
 
-    return await getUserInfoFromHtml(homeData, settingsRes.data, mandator, username);
+    return await getUserInfoFromHtml(homeData, settingsPage.data, mandator, username);
 }
 
 async function getUserInfoFromHtml(homeHtml, settingsHtml, mandator, username) {
@@ -348,15 +715,15 @@ async function getUserInfoFromHtml(homeHtml, settingsHtml, mandator, username) {
 async function getGrades(mandator, username, password) {
     console.log('Getting grades for: ' + username);
     
-    const { headers, homeData } = await getHomepageAndHeaders(mandator, username, password);
+    const { headers, homeData, cookies } = await getHomepageAndHeaders(mandator, username, password);
+    const gradesUrl = findUrlByPageid(mandator, homeData, GRADES_PAGE_ID);
+    const gradesPage = await getProtectedPageForMandator(mandator, gradesUrl, cookies, headers);
 
-    const gradesRes = await axios.get(findUrlByPageid(mandator, homeData, GRADES_PAGE_ID), {
-        withCredentials: true,
-        headers: headers,
-        maxRedirects: 0
-    });
+    if (gradesPage.cookies) {
+        storeCookies(mandator, username, gradesPage.cookies);
+    }
 
-    return await getGradesFromHtml(gradesRes.data);
+    return await getGradesFromHtml(gradesPage.data);
 } 
 
 async function getGradesFromHtml(html) {
@@ -494,15 +861,15 @@ async function getGradesFromHtml(html) {
 async function getAbsences(mandator, username, password) {
     console.log('Getting absences for: ' + username);
     
-    const { headers, homeData } = await getHomepageAndHeaders(mandator, username, password);
+    const { headers, homeData, cookies } = await getHomepageAndHeaders(mandator, username, password);
+    const absencesUrl = findUrlByPageid(mandator, homeData, ABSENCES_PAGE_ID);
+    const absencesPage = await getProtectedPageForMandator(mandator, absencesUrl, cookies, headers);
 
-    const absencesRes = await axios.get(findUrlByPageid(mandator, homeData, ABSENCES_PAGE_ID), {
-        withCredentials: true,
-        headers: headers,
-        maxRedirects: 0
-    });
+    if (absencesPage.cookies) {
+        storeCookies(mandator, username, absencesPage.cookies);
+    }
 
-    return await getAbsencesFromHtml(absencesRes.data);
+    return await getAbsencesFromHtml(absencesPage.data);
 }
 
 async function getAbsencesFromHtml(html) {
@@ -541,32 +908,254 @@ async function getAbsencesFromHtml(html) {
         return legacyAbsences;
     }
 
-    // GymLi/schulNetz variant: summary table without editable reason fields.
-    return $('table.mdl-table--listtable').first().find('tr').toArray()
-        .map(row => $(row).find('td'))
-        .filter(cells => cells.length >= 5)
-        .map(cells => {
-            const date = $(cells[0]).text().trim();
-            const untilDate = $(cells[1]).text().trim();
-            const reason = $(cells[2]).text().trim();
-            const points = $(cells[4]).text().replace(/\s+/g, ' ').trim();
+    // GymLi/schulNetz point-based absences layout.
+    const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const lower = value => normalize(value).toLowerCase();
+    const isDate = value => /\d{2}\.\d{2}\.\d{4}/.test(normalize(value));
 
-            return {
-                date,
-                untilDate,
-                reason: reason || undefined,
-                points: points || undefined
-            };
-        })
-        .filter(entry => /\d{2}\.\d{2}\.\d{4}/.test(entry.date || ''));
+    const incidents = [];
+    const openReports = [];
+    const tardiness = [];
+
+    $('table.mdl-table--listtable, table.mdl-data-table').toArray().forEach(table => {
+        const headerCells = $(table).find('tr').first().find('th').toArray().map(cell => lower($(cell).text()));
+
+        if (headerCells.length === 0) {
+            return;
+        }
+
+        const isIncidentsTable = headerCells.includes('datum von')
+            && headerCells.includes('datum bis')
+            && headerCells.some(value => value.includes('absenzpunkte'));
+        const isOpenReportsTable = headerCells.includes('datum')
+            && headerCells.includes('zeit')
+            && headerCells.includes('kurs');
+        const isTardinessTable = headerCells.includes('datum')
+            && headerCells.includes('lektion')
+            && headerCells.some(value => value.includes('zeitspanne'));
+
+        const rows = $(table).find('tr').toArray().slice(1);
+
+        if (isIncidentsTable) {
+            rows.forEach(row => {
+                const cells = $(row).find('td').toArray();
+                if (cells.length < 5) {
+                    return;
+                }
+
+                const date = normalize($(cells[0]).text());
+                const untilDate = normalize($(cells[1]).text());
+                const reason = normalize($(cells[2]).text()) || undefined;
+                const points = normalize($(cells[4]).text()) || undefined;
+
+                if (!isDate(date)) {
+                    return;
+                }
+
+                incidents.push({
+                    date,
+                    untilDate,
+                    reason,
+                    points
+                });
+            });
+            return;
+        }
+
+        if (isOpenReportsTable) {
+            rows.forEach(row => {
+                const cells = $(row).find('td').toArray();
+                if (cells.length < 3) {
+                    return;
+                }
+
+                const date = normalize($(cells[0]).text());
+                const time = normalize($(cells[1]).text());
+                const course = normalize($(cells[2]).text()) || undefined;
+
+                if (!isDate(date)) {
+                    return;
+                }
+
+                openReports.push({
+                    date,
+                    time,
+                    course
+                });
+            });
+            return;
+        }
+
+        if (isTardinessTable) {
+            rows.forEach(row => {
+                const cells = $(row).find('td').toArray();
+                if (cells.length < 5) {
+                    return;
+                }
+
+                const date = normalize($(cells[0]).text());
+                const lesson = normalize($(cells[1]).text()) || undefined;
+                const reason = normalize($(cells[2]).text()) || undefined;
+                const timespan = normalize($(cells[3]).text()) || undefined;
+                const excused = normalize($(cells[4]).text()) || undefined;
+
+                if (!isDate(date)) {
+                    return;
+                }
+
+                tardiness.push({
+                    date,
+                    lesson,
+                    reason,
+                    timespan,
+                    excused
+                });
+            });
+        }
+    });
+
+    const pageText = normalize($.root().text());
+    const totalContingentMatch = pageText.match(/Kontingent:\s*(\d+)/i);
+    const remainingContingentMatch = pageText.match(/Verbleibendes\s+Kontingent:\s*(\d+)/i);
+    const missedExamsMatch = pageText.match(/Verpasste\s+Prüfungen:\s*(\d+)/i);
+    const excusedTardinessMatch = pageText.match(/Entschuldigt:\s*(\d+)/i);
+    const unexcusedTardinessMatch = pageText.match(/Unentschuldigt:\s*(\d+)/i);
+
+    const pointsSummary = {
+        total: totalContingentMatch ? Number(totalContingentMatch[1]) : null,
+        remaining: remainingContingentMatch ? Number(remainingContingentMatch[1]) : null
+    };
+    pointsSummary.used = pointsSummary.total != null && pointsSummary.remaining != null
+        ? pointsSummary.total - pointsSummary.remaining
+        : null;
+
+    const absences = incidents.map(entry => ({
+        date: entry.date,
+        reason: entry.reason,
+        status: 'Absence points',
+        period: entry.untilDate && entry.untilDate !== entry.date ? `${entry.date} - ${entry.untilDate}` : entry.date,
+        subject: '-',
+        points: entry.points,
+        untilDate: entry.untilDate
+    }));
+
+    return {
+        absences,
+        pointsSummary,
+        incidents,
+        openReports,
+        tardiness,
+        missedExams: missedExamsMatch ? Number(missedExamsMatch[1]) : null,
+        tardinessSummary: {
+            excused: excusedTardinessMatch ? Number(excusedTardinessMatch[1]) : null,
+            unexcused: unexcusedTardinessMatch ? Number(unexcusedTardinessMatch[1]) : null
+        }
+    };
 }
 
 async function getUnconfirmedGrades(mandator, username, password) {
     console.log('Getting unconfirmed grades for: ' + username);
     
-    const { headers, homeData } = await getHomepageAndHeaders(mandator, username, password);
+    const { homeData } = await getHomepageAndHeaders(mandator, username, password);
 
     return await getUnconfirmedGradesFromHtml(homeData);
+}
+
+async function getProtectedPageForMandator(mandator, url, cookies, headers) {
+    if (isSalMandator(mandator)) {
+        let html = '';
+        let mergedCookies = mergeCookies(cookies || {});
+        const salReferer = (headers && (headers['Referer'] || headers['referer'])) || getHomepageUrlForMandator(mandator);
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const curlPage = fetchPageViaCurl(url, mergedCookies, {
+                    referer: salReferer
+                });
+                html = String(curlPage.data || '');
+                mergedCookies = mergeCookies(mergedCookies, curlPage.cookies);
+            } catch (curlError) {
+                if (SAL_DEBUG) {
+                    console.warn('SAL debug: curl protected page fetch failed, falling back to axios', {
+                        mandator,
+                        message: curlError && curlError.message
+                    });
+                }
+
+                const flow = await requestWithRedirectCookieCapture({
+                    method: 'get',
+                    url: url,
+                    headers: Object.assign({}, headers, {
+                        Referer: salReferer
+                    }),
+                    cookies: mergedCookies,
+                    maxHops: 10
+                });
+
+                html = String((flow.response && flow.response.data) || '');
+                mergedCookies = mergeCookies(mergedCookies, flow.cookies);
+            }
+
+            if (isSalPolicyAccessNotFoundShell(html) && attempt === 0) {
+                const newSessionUri = getSalNewSessionUri(html);
+                if (newSessionUri) {
+                    try {
+                        const recoveryUrl = toAbsoluteUrl(getBaseUrlForMandator(mandator), newSessionUri);
+                        const recoveryPage = fetchPageViaCurl(recoveryUrl, mergedCookies, {
+                            referer: salReferer
+                        });
+                        mergedCookies = mergeCookies(mergedCookies, recoveryPage.cookies);
+                        continue;
+                    } catch (recoveryError) {
+                        if (SAL_DEBUG) {
+                            console.warn('SAL debug: newsession recovery request failed', {
+                                mandator,
+                                message: recoveryError && recoveryError.message
+                            });
+                        }
+                    }
+                }
+            }
+
+            break;
+        }
+
+        if (SAL_DEBUG) {
+            const pageIdMatch = String(url || '').match(/[?&]pageid=(\d+)/i);
+            const pageLabel = pageIdMatch && pageIdMatch[1] ? `pageid-${pageIdMatch[1]}` : 'unknown-page';
+            const debugFile = path.join(os.tmpdir(), `kaschuso-sal-${normalizeMandatorName(mandator)}-${pageLabel}.html`);
+            fs.writeFileSync(debugFile, html, 'utf8');
+            console.warn('SAL debug: protected page dump written to', debugFile);
+        }
+
+        if (isSalAclLogoutShell(html)) {
+            const error = new Error('SAL protected page denied by upstream ACL (errorcode=17)');
+            error.name = 'UpstreamSessionContextError';
+            throw error;
+        }
+
+        if (isSalPolicyAccessNotFoundShell(html)) {
+            const error = new Error('SAL protected page denied by upstream policy context (access_notfound)');
+            error.name = 'UpstreamSessionContextError';
+            throw error;
+        }
+
+        return {
+            data: html,
+            cookies: mergedCookies
+        };
+    }
+
+    const res = await axios.get(url, {
+        withCredentials: true,
+        headers: headers,
+        maxRedirects: 0
+    });
+
+    return {
+        data: String(res.data || ''),
+        cookies: mergeCookies(cookies, res.cookies)
+    };
 }
 
 async function getUnconfirmedGradesFromHtml(html) {
@@ -806,28 +1395,480 @@ function pickBestMandatorDescription(existingDescription, incomingDescription, n
 }
 
 function findUrlByPageid(mandator, html, pageid) {
-    return getBaseUrlForMandator(mandator) + mandator + '/' + html.match('"(index\\.php\\?pageid=' + pageid + '[^"]*)"')[1];
+    const match = String(html || '').match('"(index\\.php\\?pageid=' + pageid + '[^"]*)"');
+    if (!match || !match[1]) {
+        if (isSalMandator(mandator)) {
+            // SAL responses can occasionally return a webtop/logout shell without embedded page links.
+            // Fall back to direct pageid navigation using the authenticated session cookies.
+            return getBaseUrlForMandator(mandator) + mandator + '/index.php?pageid=' + pageid;
+        }
+
+        const error = new TypeError('Could not find pageid=' + pageid + ' in homepage HTML');
+        error.name = 'UpstreamParsingError';
+        throw error;
+    }
+
+    return getBaseUrlForMandator(mandator) + mandator + '/' + match[1];
+}
+
+function getRequestMaxRedirectsForMandator(mandator) {
+    return isSalMandator(mandator) ? 5 : 0;
+}
+
+function getHomepageUrlForMandator(mandator) {
+    const baseUrl = getBaseUrlForMandator(mandator);
+    if (isSalMandator(mandator)) {
+        return baseUrl + mandator + '/';
+    }
+
+    return baseUrl + mandator + '/loginto.php';
+}
+
+function getSalHomepageCandidates(mandator) {
+    const baseUrl = getBaseUrlForMandator(mandator);
+    const normalizedMandator = normalizeMandatorName(mandator);
+    const directCandidates = [
+        baseUrl + normalizedMandator + '/',
+        baseUrl + normalizedMandator + '/loginto.php'
+    ];
+
+    const rewrittenCandidates = SAL_TRY_REWRITTEN_LAUNCH
+        ? [
+            getSalPortalAccessBaseUrl(mandator),
+            getSalPortalAccessBaseUrl(mandator) + 'loginto.php'
+        ]
+        : [];
+
+    const candidates = directCandidates.concat(rewrittenCandidates);
+
+    return Array.from(new Set(candidates));
+}
+
+function hasPageLinks(homeHtml) {
+    return /index\.php\?pageid=\d+/i.test(String(homeHtml || ''));
+}
+
+function getSalSchulnetzLoginUrl(homeHtml, mandator) {
+    const html = String(homeHtml || '');
+    if (!html) {
+        return null;
+    }
+
+    const $ = cheerio.load(html);
+    const normalizedMandator = normalizeMandatorName(mandator);
+    const preferredHref = $(`a[href*="/${normalizedMandator}/index.php"]`).first().attr('href');
+    if (preferredHref) {
+        return toAbsoluteUrl(getBaseUrlForMandator(mandator), preferredHref);
+    }
+
+    const genericHref = $('a[href*="index.php"]').first().attr('href');
+    return genericHref ? toAbsoluteUrl(getBaseUrlForMandator(mandator), genericHref) : null;
+}
+
+function isSalAclLogoutShell(html) {
+    const normalized = String(html || '');
+    return /"pageType"\s*:\s*"logout"/i.test(normalized)
+        && /"errorcode"\s*:\s*17/i.test(normalized)
+        && /my\.acl/i.test(normalized);
+}
+
+function isSalLogout(html) {
+    const normalized = String(html || '');
+    return /"pageType"\s*:\s*"logout"/i.test(normalized);
+}
+
+function isSalPolicyAccessNotFoundShell(html) {
+    const normalized = String(html || '');
+    return /"pageType"\s*:\s*"logout"/i.test(normalized)
+        && /"subtype"\s*:\s*"access_notfound"/i.test(normalized);
+}
+
+function getSalNewSessionUri(html) {
+    const match = String(html || '').match(/"type"\s*:\s*"newsession"[\s\S]*?"uri"\s*:\s*"([^\"]+)"/i);
+    return match && match[1] ? match[1] : null;
+}
+
+function getCookieHeaders(cookies, additionalHeaders) {
+    const headers = Object.assign({}, DEFAULT_HEADERS, additionalHeaders || {});
+    const cookieHeader = toCookieHeaderString(cookies || {});
+    if (cookieHeader) {
+        headers['Cookie'] = cookieHeader;
+    }
+
+    return headers;
+}
+
+function getSalResourceQueryParam(resourceListXml, listType) {
+    const xml = cheerio.load(String(resourceListXml || ''), { xmlMode: true });
+    return xml(`list[type="${listType}"] > entry[type="group_names"]`).attr('param') || null;
+}
+
+function getSalResourceIds(resourceListXml, listType) {
+    const xml = cheerio.load(String(resourceListXml || ''), { xmlMode: true });
+    const idsRaw = xml(`list[type="${listType}"] > entry[type="group_names"]`).first().text() || '';
+    return idsRaw.split(/\s+/).map(value => value.trim()).filter(Boolean);
+}
+
+function findSalResourceIdForMandator(resourceIds, mandator) {
+    const normalizedMandator = normalizeMandatorName(mandator);
+    if (!normalizedMandator || !Array.isArray(resourceIds)) {
+        return null;
+    }
+
+    const preferred = resourceIds.find(resourceId => {
+        const normalizedId = String(resourceId || '').toLowerCase();
+        return normalizedId.endsWith('/' + normalizedMandator) || normalizedId.includes('/' + normalizedMandator);
+    });
+
+    return preferred || null;
+}
+
+function getSalResourceApplicationUri(resourceInfoXml, resourceId) {
+    const xml = cheerio.load(String(resourceInfoXml || ''), { xmlMode: true });
+    const items = xml('item');
+
+    let appUri = null;
+    items.each((_, item) => {
+        if (appUri) {
+            return;
+        }
+
+        const node = xml(item);
+        const currentId = (node.find('id').first().text() || '').trim();
+        if (!currentId || currentId.toLowerCase() !== String(resourceId || '').toLowerCase()) {
+            return;
+        }
+
+        appUri = (node.find('application_uri').first().text() || '').trim() || null;
+    });
+
+    return appUri;
+}
+
+function toAbsoluteUrl(baseUrl, maybeRelativeUrl) {
+    if (!maybeRelativeUrl) {
+        return null;
+    }
+
+    return new URL(maybeRelativeUrl, baseUrl).toString();
+}
+
+function getSalPortalAccessBaseUrl(mandator) {
+    const baseUrl = getBaseUrlForMandator(mandator);
+    const normalizedMandator = normalizeMandatorName(mandator);
+    const origin = new URL(baseUrl).origin;
+    const encodedOrigin = Buffer.from(origin, 'utf8').toString('hex');
+
+    return `${baseUrl}f5-w-${encodedOrigin}$$/${normalizedMandator}/`;
+}
+
+function toSalPortalAccessUrl(mandator, candidateUrl) {
+    const baseUrl = getBaseUrlForMandator(mandator);
+    const normalizedMandator = normalizeMandatorName(mandator);
+    const rewrittenBase = getSalPortalAccessBaseUrl(mandator);
+
+    if (!candidateUrl) {
+        return rewrittenBase;
+    }
+
+    const absolute = new URL(candidateUrl, baseUrl);
+    const expectedPrefix = '/' + normalizedMandator + '/';
+
+    if (absolute.origin !== new URL(baseUrl).origin || !absolute.pathname.startsWith(expectedPrefix)) {
+        return absolute.toString();
+    }
+
+    const suffixPath = absolute.pathname.slice(expectedPrefix.length);
+    const query = absolute.search || '';
+    const hash = absolute.hash || '';
+    return `${rewrittenBase}${suffixPath}${query}${hash}`;
+}
+
+async function launchSalWebtopResource(mandator, cookies) {
+    if (!isSalMandator(mandator)) {
+        return cookies;
+    }
+
+    const baseUrl = getBaseUrlForMandator(mandator);
+    let mergedCookies = mergeCookies(cookies || {});
+    
+    if (SAL_DEBUG && mergedCookies[SAL_COOKIE_JAR_RAW_KEY]) {
+        console.warn('SAL debug: Launch cookie jar reused:', mergedCookies[SAL_COOKIE_JAR_RAW_KEY]);
+    }
+
+    // Keep SAL session transitions on curl+jars to match known-good manual flow semantics.
+    /* SKIPPED: Authenticate logic already lands on webtop. Re-requesting it triggers logout.
+    const webtopPage = fetchPageViaCurl(baseUrl + SAL_WEBTOP_URL.replace(/^\//, ''), mergedCookies, {
+        referer: baseUrl + 'my.policy'
+    });
+    mergedCookies = mergeCookies(mergedCookies, webtopPage.cookies);
+
+    if (SAL_DEBUG) {
+        const debugFile = path.join(os.tmpdir(), `kaschuso-sal-webtop-${normalizeMandatorName(mandator)}.html`);
+        fs.writeFileSync(debugFile, String(webtopPage.data || ''), 'utf8');
+        console.warn('SAL debug: webtop dump written to', debugFile);
+    }
+    */
+
+    const resourceListPage = fetchPageViaCurl(baseUrl + SAL_RESOURCE_LIST_URL.replace(/^\//, ''), mergedCookies, {
+        referer: baseUrl + SAL_WEBTOP_URL.replace(/^\//, ''),
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/xml,text/xml;q=0.9,*/*;q=0.8'
+        }
+    });
+
+    mergedCookies = mergeCookies(mergedCookies, resourceListPage.cookies);
+
+    if (SAL_DEBUG) {
+        const debugFile = path.join(os.tmpdir(), `kaschuso-sal-resource-list-${normalizeMandatorName(mandator)}.xml`);
+        fs.writeFileSync(debugFile, String(resourceListPage.data || ''), 'utf8');
+        console.warn('SAL debug: resource list dump written to', debugFile);
+    }
+
+    const directLaunchUrl = baseUrl + mandator + '/';
+    let launchUrl = SAL_TRY_REWRITTEN_LAUNCH ? getSalPortalAccessBaseUrl(mandator) : directLaunchUrl;
+
+    const queryParam = getSalResourceQueryParam(resourceListPage.data, 'webtop_link');
+    const resourceIds = getSalResourceIds(resourceListPage.data, 'webtop_link');
+    const resourceId = findSalResourceIdForMandator(resourceIds, mandator);
+
+    // In this environment resource_info_v2 can hard-reset and invalidate the flow.
+    // Keep it opt-in only; default to direct launch URL confirmed from browser behavior.
+    if (SAL_USE_RESOURCE_INFO && queryParam && resourceId) {
+        try {
+            const infoQuery = `${encodeURIComponent(queryParam)}=${encodeURIComponent(resourceId)}`;
+            const resourceInfoFlow = await requestWithRedirectCookieCapture({
+                method: 'get',
+                url: `${baseUrl}${SAL_RESOURCE_INFO_URL.replace(/^\//, '')}?${infoQuery}`,
+                headers: getCookieHeaders(mergedCookies, {
+                    'Accept': 'application/xml,text/xml;q=0.9,*/*;q=0.8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Referer': baseUrl + SAL_WEBTOP_URL.replace(/^\//, '')
+                }),
+                cookies: mergedCookies,
+                maxHops: 5
+            });
+
+            mergedCookies = mergeCookies(mergedCookies, resourceInfoFlow.cookies);
+            const applicationUri = getSalResourceApplicationUri(resourceInfoFlow.response && resourceInfoFlow.response.data, resourceId);
+            launchUrl = toSalPortalAccessUrl(mandator, toAbsoluteUrl(baseUrl, applicationUri)) || launchUrl;
+        } catch (error) {
+            // In some environments this endpoint resets the connection. Keep progressing with base launch URL.
+            console.warn('SAL resource_info request failed, using direct launch fallback', {
+                mandator,
+                message: error && error.message,
+                code: error && error.code
+            });
+        }
+    } else if (SAL_DEBUG) {
+        console.warn('SAL debug: skipping resource_info_v2 lookup and using direct launch URL', {
+            mandator,
+            launchUrl,
+            hasResourceId: Boolean(resourceId)
+        });
+    }
+
+    const launchCandidates = SAL_TRY_REWRITTEN_LAUNCH
+        ? Array.from(new Set([launchUrl, directLaunchUrl]))
+        : [directLaunchUrl];
+    let launchSucceeded = false;
+
+    for (const candidateUrl of launchCandidates) {
+        try {
+            const launchPage = fetchPageViaCurl(candidateUrl, mergedCookies, {
+                referer: baseUrl + SAL_WEBTOP_URL.replace(/^\//, '')
+            });
+            mergedCookies = mergeCookies(mergedCookies, launchPage.cookies);
+            launchSucceeded = true;
+            break;
+        } catch (curlError) {
+            if (SAL_DEBUG) {
+                console.warn('SAL debug: curl launch request failed', {
+                    mandator,
+                    candidateUrl,
+                    message: curlError && curlError.message
+                });
+            }
+
+            try {
+                const launchFlow = await requestWithRedirectCookieCapture({
+                    method: 'get',
+                    url: candidateUrl,
+                    headers: getCookieHeaders(mergedCookies, {
+                        'Referer': baseUrl + SAL_WEBTOP_URL.replace(/^\//, '')
+                    }),
+                    cookies: mergedCookies,
+                    maxHops: 10
+                });
+
+                mergedCookies = mergeCookies(mergedCookies, launchFlow.cookies);
+                launchSucceeded = true;
+                break;
+            } catch (axiosError) {
+                if (SAL_DEBUG) {
+                    console.warn('SAL debug: axios launch request failed', {
+                        mandator,
+                        candidateUrl,
+                        message: axiosError && axiosError.message
+                    });
+                }
+            }
+        }
+    }
+
+    if (!launchSucceeded) {
+        const error = new Error('SAL launch request failed for all launch URL candidates');
+        error.name = 'UpstreamSessionContextError';
+        throw error;
+    }
+
+    return mergedCookies;
+}
+
+async function getSalHomepageWithRecovery(mandator, cookies) {
+    let mergedCookies = mergeCookies(cookies || {});
+    const homepageCandidates = getSalHomepageCandidates(mandator);
+    const baseUrl = getBaseUrlForMandator(mandator);
+    let latestHomeData = '';
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+        for (const homepageUrl of homepageCandidates) {
+            try {
+                const homePage = fetchPageViaCurl(homepageUrl, mergedCookies, {
+                    referer: baseUrl + SAL_WEBTOP_URL.replace(/^\//, '')
+                });
+
+                mergedCookies = mergeCookies(mergedCookies, homePage.cookies);
+                latestHomeData = String(homePage.data || '');
+
+                if (hasPageLinks(latestHomeData)) {
+                    return {
+                        cookies: mergedCookies,
+                        homeData: latestHomeData
+                    };
+                }
+
+                const loginBridgeUrl = getSalSchulnetzLoginUrl(latestHomeData, mandator);
+                if (loginBridgeUrl) {
+                    const loginBridgePage = fetchPageViaCurl(loginBridgeUrl, mergedCookies, {
+                        referer: homepageUrl
+                    });
+
+                    mergedCookies = mergeCookies(mergedCookies, loginBridgePage.cookies);
+                    latestHomeData = String(loginBridgePage.data || latestHomeData);
+
+                    if (hasPageLinks(latestHomeData)) {
+                        return {
+                            cookies: mergedCookies,
+                            homeData: latestHomeData
+                        };
+                    }
+
+                    if (SAL_DEBUG) {
+                        console.warn('SAL debug: schulNetz login bridge did not yield page links', {
+                            mandator,
+                            attempt,
+                            homepageUrl,
+                            loginBridgeUrl
+                        });
+                    }
+                }
+
+                if (SAL_DEBUG) {
+                    console.warn('SAL debug: homepage candidate missing page links', {
+                        mandator,
+                        attempt,
+                        homepageUrl,
+                        finalUrl: homepageUrl,
+                        status: null
+                    });
+                }
+            } catch (error) {
+                if (SAL_DEBUG) {
+                    console.warn('SAL debug: homepage candidate request failed', {
+                        mandator,
+                        attempt,
+                        homepageUrl,
+                        message: error && error.message,
+                        code: error && error.code
+                    });
+                }
+            }
+        }
+
+        if (attempt === 0) {
+            mergedCookies = await launchSalWebtopResource(mandator, mergedCookies);
+        }
+    }
+
+    return {
+        cookies: mergedCookies,
+        homeData: latestHomeData
+    };
 }
 
 async function getHomepageAndHeaders(mandator, username, password) {
     let cookies = await getCookies(mandator, username, password);
-    
-    let headers = Object.assign({}, DEFAULT_HEADERS);
-    headers['Cookie'] = toCookieHeaderString(cookies);
-    const baseUrl = getBaseUrlForMandator(mandator);
-    
-    return axios.get(baseUrl + mandator + '/loginto.php', {
+    let homeData;
+
+    if (isSalMandator(mandator)) {
+        try {
+            const salHome = await getSalHomepageWithRecovery(mandator, cookies);
+            cookies = salHome.cookies;
+            homeData = salHome.homeData;
+
+            if (isSalAclLogoutShell(homeData) || isSalLogout(homeData)) {
+                throw new Error('SAL session invalid (logout shell)');
+            }
+            if (!hasPageLinks(homeData)) {
+                throw new Error('SAL session missing page links');
+            }
+        } catch (error) {
+            if (SAL_DEBUG) {
+                console.warn('SAL debug: session check/fetch failed, forcing re-auth', {
+                    mandator,
+                    message: error.message
+                });
+            }
+            // Force fresh authentication and retry once
+            cookies = await authenticate(mandator, username, password);
+            const salHomeRetry = await getSalHomepageWithRecovery(mandator, cookies);
+            cookies = salHomeRetry.cookies;
+            homeData = salHomeRetry.homeData;
+        }
+        storeCookies(mandator, username, cookies);
+    } else {
+        const headers = getCookieHeaders(cookies);
+        const homepageUrl = getHomepageUrlForMandator(mandator);
+        const res = await axios.get(homepageUrl, {
             withCredentials: true,
             headers: headers,
-            maxRedirects: 0
-        }).then(res => {
-            cookies = { ...cookies, ...res.cookies };
-            headers['Cookie'] = toCookieHeaderString(cookies);
-            return {
-                headers: headers,
-                homeData: res.data
-            };
+            maxRedirects: getRequestMaxRedirectsForMandator(mandator)
         });
+        cookies = mergeCookies(cookies, res.cookies);
+        homeData = res.data;
+    }
+
+    if (SAL_DEBUG && isSalMandator(mandator) && !hasPageLinks(homeData)) {
+        const debugFile = path.join(os.tmpdir(), `kaschuso-sal-home-${mandator}.html`);
+        fs.writeFileSync(debugFile, String(homeData || ''), 'utf8');
+        console.warn('SAL debug: homepage without page links dumped to', debugFile);
+    }
+
+    if (isSalMandator(mandator) && (isSalAclLogoutShell(homeData) || isSalLogout(homeData))) {
+        const error = new Error('SAL session context denied by upstream (re-auth failed)');
+        error.name = 'UpstreamSessionContextError';
+        throw error;
+    }
+
+    return {
+        headers: Object.assign({}, getCookieHeaders(cookies), isSalMandator(mandator)
+            ? { Referer: getHomepageUrlForMandator(mandator) }
+            : {}),
+        homeData: homeData,
+        cookies: cookies
+    };
 }
 
 async function getCookies(mandator, username, password) {
@@ -838,18 +1879,31 @@ async function getCookies(mandator, username, password) {
         cookiesMap[key] = cookies;
     } else {
         // check if cookies are valid
-        let headers = Object.assign({}, DEFAULT_HEADERS);
-        headers['Cookie'] = toCookieHeaderString(cookies);
-        const baseUrl = getBaseUrlForMandator(mandator);
-        
-        const homeRes = await axios.get(baseUrl + mandator + '/loginto.php', {
-            withCredentials: true,
-            headers: headers,
-            maxRedirects: 0
-        });
-        if (homeRes.status !== 200) {
+        const homepageUrl = getHomepageUrlForMandator(mandator);
+
+        let sessionLooksValid = false;
+
+        if (isSalMandator(mandator)) {
+            // Probe can be destructive to F5 session state.
+            // We assume validity here and handle re-auth in getHomepageAndHeaders if needed.
+            sessionLooksValid = true;
+        } else {
+            let headers = Object.assign({}, DEFAULT_HEADERS);
+            headers['Cookie'] = toCookieHeaderString(cookies);
+
+            const homeRes = await axios.get(homepageUrl, {
+                withCredentials: true,
+                headers: headers,
+                maxRedirects: getRequestMaxRedirectsForMandator(mandator)
+            });
+            sessionLooksValid = homeRes.status === 200 && hasPageLinks(homeRes.data);
+        }
+
+        if (!sessionLooksValid) {
             console.log('Session expired for: ' + username);
             cookies = await authenticate(mandator, username, password);
+            cookiesMap[key] = cookies;
+        } else {
             cookiesMap[key] = cookies;
         }
     }
@@ -865,6 +1919,9 @@ function toCookieHeaderString(cookies) {
     let headerString = "";
 
     for (var k in cookies) {
+        if (k === SAL_COOKIE_JAR_RAW_KEY) {
+            continue;
+        }
         if (headerString) {
             headerString += "; ";
         }
@@ -872,6 +1929,66 @@ function toCookieHeaderString(cookies) {
     }
 
     return headerString;
+}
+
+function getResponseStatus(response) {
+    return response && (response.status || (response.error && response.error.response && response.error.response.status));
+}
+
+function resolveRedirectUrl(currentUrl, locationValue) {
+    if (!locationValue) {
+        return currentUrl;
+    }
+
+    return new URL(locationValue, currentUrl).toString();
+}
+
+async function requestWithRedirectCookieCapture(options) {
+    const method = options.method || 'get';
+    const data = options.data;
+    const maxHops = options.maxHops || 5;
+    let url = options.url;
+    let cookies = options.cookies || {};
+    let lastResponse;
+
+    for (let hop = 0; hop < maxHops; hop++) {
+        const headers = Object.assign({}, DEFAULT_HEADERS, options.headers || {});
+        const cookieHeader = toCookieHeaderString(cookies);
+        if (cookieHeader) {
+            headers['Cookie'] = cookieHeader;
+        }
+
+        lastResponse = await axios({
+            method: method,
+            url: url,
+            data: data,
+            withCredentials: true,
+            headers: headers,
+            maxRedirects: 0
+        });
+
+        cookies = mergeCookies(cookies, lastResponse.cookies);
+
+        const status = getResponseStatus(lastResponse);
+        const locationValue = lastResponse.locationValue;
+        const isRedirect = status >= 300 && status < 400 && Boolean(locationValue);
+
+        if (!isRedirect) {
+            return {
+                response: lastResponse,
+                cookies: cookies,
+                finalUrl: url
+            };
+        }
+
+        url = resolveRedirectUrl(url, locationValue);
+    }
+
+    return {
+        response: lastResponse,
+        cookies: cookies,
+        finalUrl: url
+    };
 }
 
 function hasAuthenticatedSessionCookie(cookies) {
@@ -928,7 +2045,7 @@ axios.interceptors.response.use((response) => {
     response.cookies = getCookiesFromHeaders(response.headers);
     return response;
 }, (error) => {
-    if (error && error.response && error.response.status === 302) {
+    if (error && error.response && error.response.status >= 300 && error.response.status < 400) {
         const cookies = getCookiesFromHeaders(error.response.headers);
         const locationValue = error.response.headers.location;
         return Promise.resolve({error, cookies, locationValue});

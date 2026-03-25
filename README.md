@@ -157,17 +157,24 @@ npm run stop
 
 ## Authentication
 
-The API implements secure upstream session management:
+The API implements secure upstream session management for two portal types:
 
-### How It Works
+### KASCHUSO (Legacy)
 
-1. **Session Bootstrap**: A `basicAuthenticate()` call to the KASCHUSO root initializes a session cookie (`SCDID_S`).
-2. **CSRF Handling**: The login form page and `ses.js` (containing BID tokens) are fetched with the session cookie.
+1. **Session Bootstrap**: A `basicAuthenticate()` call initializes a session cookie (`SCDID_S`).
+2. **CSRF Handling**: Login form page and `ses.js` (containing BID tokens) are fetched with session cookie.
 3. **Form Submission**: All form inputs are scraped and submitted as POST with:
-   - Accumulated session cookies from steps 1-2
+   - Accumulated session cookies
    - Browser-like headers (`Origin`, `Referer`)
    - BID parameter from `ses.js` (CSRF token)
-4. **Session Validation**: On success, upstream returns a new `SCDID_S` cookie. This is checked via regex `/^SCDID(?:_|$)/`.
+4. **Session Validation**: On success, `SCDID_S` cookie is returned and validated.
+
+### SAL (Modern, GymLi)
+
+1. **Curl-based Auth**: Uses curl with persistent cookie jar to authenticate against `/my.policy`.
+2. **Session Capture**: Captures SimpleSAML and MRHSession cookies through SAML redirect flow.
+3. **Lazy Fetch**: Homepage and protected pages are fetched only when needed, avoiding destructive re-requests.
+4. **Automatic Retry**: If homepage returns a logout shell, automatically re-authenticates and retries once.
 
 ### Error Classification
 
@@ -206,7 +213,7 @@ Known alias slugs are normalized to canonical values in API output (for example 
 
 Note: The result is best effort. It is intended to stay useful after the upstream removed most public school links, but newly added schools or renamed mandators may still need a code update.
 
-When `ENABLE_SAL_PORTAL=true`, the curated SAL mandator `gymli` is included.
+When `ENABLE_SAL_PORTAL=true` (default), SAL mandators like `gymli` (Gymnasium Liestal) are included in the mandator list. SAL uses a modern F5 portal authentication flow and requires special session handling to avoid destructive probes.
 
 ### `GET /api/meta`
 
@@ -493,6 +500,13 @@ Expected:
 ### Service health check
 
 - Verify app process is alive with `curl -i http://localhost:3001/health`.
+
+### SAL (GymLi) - Session or page access failures
+
+- SAL authentication succeeds but protected pages return error: This typically indicates the session was invalidated by re-requesting the Webtop or homepage immediately after auth. The service now avoids this via careful session handling.
+- If logout appears in response after successful auth, the session context was not preserved properly. The service automatically re-authenticates once if this is detected.
+- Empty user info or missing fields: SAL's schulNetz may expose fewer fields depending on school configuration (e.g., `address`, `education` may be empty).
+- Check that `ENABLE_SAL_PORTAL=true` in `.env` (default yes). Confirm `SAL_BASE_URL=https://portal.sbl.ch/` is set.
 
 ## Development
 

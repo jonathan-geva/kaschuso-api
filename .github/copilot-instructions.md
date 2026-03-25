@@ -23,7 +23,9 @@
 
 ## Authentication Flow (Critical)
 
-The upstream KASCHUSO portal requires:
+The service supports two portal modes:
+
+### KASCHUSO (Legacy)
 
 1. **Bootstrap Session** (`basicAuthenticate()`): GET root URL, capture `SCDID_S` session cookie.
 2. **Fetch Form + CSRF Token**: GET login form page + `ses.js` (both with session cookie, parallel).
@@ -35,11 +37,31 @@ The upstream KASCHUSO portal requires:
    - BID parameter from `ses.js` (see `getActionFromSesJs()`)
 5. **Validate Session**: Check for `SCDID_S` cookie in response. If present → authenticated. If not → check for inline error message (span class `sls-global-errors-msg`).
 
-**Key Insights:**
-- Session cookie (`SCDID_S`) is critical at every step; forgetting to carry it forward will cause login to fail.
-- Wrong credentials return HTTP 200 (NOT 302) with an inline German error message. This is classified as `INVALID_CREDENTIALS` by checking for `.sls-global-errors-msg` element.
-- The BID parameter in `ses.js` changes on each fetch; use regex `/var bid = getBid\('([A-Fa-f0-9]+)'\)/` to extract it.
-- `currentRequestedPage` is a hidden form field that must be preserved from the form HTML.
+Key insights:
+- Session cookie (`SCDID_S`) is critical at every step; forgetting to carry it forward causes login failure.
+- Wrong credentials return HTTP 200 (NOT 302) with an inline German error message (`INVALID_CREDENTIALS` classification via `.sls-global-errors-msg` element).
+- BID parameter in `ses.js` changes on each fetch; use regex `/var bid = getBid\('([A-Fa-f0-9]+)'\)/` to extract.
+- `currentRequestedPage` is a hidden form field that must be preserved.
+
+### SAL (Modern Portal, GymLi)
+
+1. **Hangup Session** (optional): Clear any stale BIG-IP sessions via `vdesk/hangup.php3`.
+2. **Bootstrap + Login POST**: Both handled by curl-based `authenticateViaSalPortalWithCurl()`:
+   - GET `/my.policy` to capture session cookies
+   - POST `/my.policy` with credentials
+   - Follow SAML redirect chain to webtop
+   - Capture session cookies (SimpleSAML, MRHSession, etc.)
+3. **Avoid Destructive Probes**: Do NOT re-request the Webtop or homepage immediately after auth—F5 may trigger a logout/reset.
+4. **Lazy Homepage Fetch**: Homepage is accessed only when needed for page links (in `getHomepageAndHeaders`).
+5. **Retry on Logout**: If homepage returns a logout shell, automatically re-authenticate once and retry.
+
+Key insights:
+- SAL uses modern F5/APM policy flow; `ses.js` and `SCDID*` cookies do NOT apply.
+- Curl-backed authentication is used to match browser-like cookie jar semantics; Node HTTP clients can trigger false F5 policy failures.
+- Re-accessing Webtop or homepage immediately after auth may cause F5 to reset the session with "Access policy check is already running" or explicit logout.
+- Session validity is checked conservatively: assume fresh auth is valid; only re-auth if `getHomepageAndHeaders` detects a logout shell.
+- User-Agent header must be set for resource_list requests; missing it may return HTML instead of XML.
+- In some F5 environments, the `resource_info_v2` endpoint can reset connections; it is opt-in via `SAL_USE_RESOURCE_INFO=false` (default).
 
 ## Build And Test
 - Install dependencies with `yarn install` (or `npm install`).
@@ -69,6 +91,8 @@ The upstream KASCHUSO portal requires:
 - Session cookies may rotate between requests; always merge and forward accumulated cookies.
 - The homepage `Ihre letzten Noten` table is a separate unconfirmed/latest-uploaded feed and should not be treated as identical to the full grades page semantics.
 - `gymli` lives on `portal.sbl.ch` and may render table detail rows with fewer columns than classic KASCHUSO pages; parser logic must remain resilient to both shapes.
+- SAL homepage may occasionally return logout shells (`"pageType": "logout"`) even after successful auth; this triggers automatic re-authentication in `getHomepageAndHeaders`.
+- Parsed user info for SAL (`gymli`) may have missing fields (e.g., `address`, `education`, `class`) depending on schulNetz field visibility; do not assume all fields are populated.
 
 ## Security And Logging
 - This repository is publicly available on GitHub; never publish secrets, deploy hooks, tokens, credentials, private identifiers, or other privacy-related information in code, docs, tests, commits, or generated content.

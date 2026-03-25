@@ -8,11 +8,19 @@ router.get('/', rejectCredentialQueryParams, requireAuth, function(req, res, nex
     const mandator = req.auth.mandator;
     const username = req.auth.username;
     const password = req.auth.password;
-    getAbsences(mandator, username, password).then(absences => {
+    getAbsences(mandator, username, password).then(absencePayload => {
+        const isArrayPayload = Array.isArray(absencePayload);
+        const normalizedPayload = isArrayPayload
+            ? { absences: absencePayload }
+            : {
+                absences: (absencePayload && Array.isArray(absencePayload.absences)) ? absencePayload.absences : [],
+                ...absencePayload
+            };
+
         return res.json({
             mandator: mandator,
             username: username,
-            absences: absences
+            ...normalizedPayload
         });
     }).catch(next);
 });

@@ -428,6 +428,7 @@ test('get unconfirmed grades from html', async () => {
 
 test('get absences from modern summary table layout', async () => {
         const html = `
+        <h4>Absenzauszug - W</h4>
         <table class="mdl-data-table mdl-js-data-table mdl-table--listtable">
             <tr>
                 <th>Datum von</th><th>Datum bis</th><th>Grund</th><th></th><th>Absenzpunkte</th>
@@ -448,20 +449,147 @@ test('get absences from modern summary table layout', async () => {
             </tr>
         </table>`;
 
-        expect(await getAbsencesFromHtml(html)).toEqual([
+        expect(await getAbsencesFromHtml(html)).toEqual({
+            absences: [
                 {
-                        date: '26.01.2026',
-                        untilDate: '04.02.2026',
-                        reason: undefined,
-                        points: '10'
+                    date: '26.01.2026',
+                    reason: undefined,
+                    status: 'Absence points',
+                    period: '26.01.2026 - 04.02.2026',
+                    subject: '-',
+                    points: '10',
+                    untilDate: '04.02.2026'
                 },
                 {
-                        date: '13.02.2026',
-                        untilDate: '13.02.2026',
-                        reason: 'Arzt',
-                        points: '3'
+                    date: '13.02.2026',
+                    reason: 'Arzt',
+                    status: 'Absence points',
+                    period: '13.02.2026',
+                    subject: '-',
+                    points: '3',
+                    untilDate: '13.02.2026'
                 }
-        ]);
+            ],
+            pointsSummary: {
+                total: null,
+                remaining: null,
+                used: null
+            },
+            incidents: [
+                {
+                    date: '26.01.2026',
+                    untilDate: '04.02.2026',
+                    reason: undefined,
+                    points: '10'
+                },
+                {
+                    date: '13.02.2026',
+                    untilDate: '13.02.2026',
+                    reason: 'Arzt',
+                    points: '3'
+                }
+            ],
+            openReports: [],
+            tardiness: [],
+            missedExams: null,
+            tardinessSummary: {
+                excused: null,
+                unexcused: null
+            }
+        });
+});
+
+test('get absences from SAL point-based layout with open reports and tardiness', async () => {
+    const html = `
+    <div>
+        <h4>Absenzauszug - W</h4>
+        <table class="mdl-data-table mdl-js-data-table mdl-table--listtable">
+            <tr><th>Datum von</th><th>Datum bis</th><th>Grund</th><th></th><th>Absenzpunkte</th></tr>
+            <tr><td>26.01.2026</td><td>04.02.2026</td><td></td><td></td><td>10</td></tr>
+            <tr><td>13.02.2026</td><td>13.02.2026</td><td>Arzt</td><td></td><td>3</td></tr>
+        </table>
+        <div>Anzahl Ereignisse: 2</div>
+        <div>Kontingent: 30</div>
+        <div>Verbleibendes Kontingent: 17</div>
+        <div>Verpasste Prüfungen: 1</div>
+
+        <h4>Offene Absenzmeldungen</h4>
+        <table class="mdl-data-table mdl-js-data-table mdl-table--listtable">
+            <tr><th>Datum</th><th>Zeit</th><th>Kurs</th></tr>
+            <tr><td>12.03.2026</td><td>07:45 - 08:30</td><td>COURSE-ALPHA</td></tr>
+        </table>
+
+        <h4>Verspätungen</h4>
+        <table class="mdl-data-table mdl-js-data-table mdl-table--listtable">
+            <tr><th>Datum</th><th>Lektion</th><th>Grund</th><th>Zeitspanne</th><th>Entschuldigt</th></tr>
+            <tr><td>19.12.2025</td><td>09:35</td><td></td><td>5</td><td>Nein</td></tr>
+        </table>
+        <div>Entschuldigt: 0</div>
+        <div>Unentschuldigt: 1</div>
+    </div>`;
+
+    expect(await getAbsencesFromHtml(html)).toEqual({
+        absences: [
+            {
+                date: '26.01.2026',
+                reason: undefined,
+                status: 'Absence points',
+                period: '26.01.2026 - 04.02.2026',
+                subject: '-',
+                points: '10',
+                untilDate: '04.02.2026'
+            },
+            {
+                date: '13.02.2026',
+                reason: 'Arzt',
+                status: 'Absence points',
+                period: '13.02.2026',
+                subject: '-',
+                points: '3',
+                untilDate: '13.02.2026'
+            }
+        ],
+        pointsSummary: {
+            total: 30,
+            remaining: 17,
+            used: 13
+        },
+        incidents: [
+            {
+                date: '26.01.2026',
+                untilDate: '04.02.2026',
+                reason: undefined,
+                points: '10'
+            },
+            {
+                date: '13.02.2026',
+                untilDate: '13.02.2026',
+                reason: 'Arzt',
+                points: '3'
+            }
+        ],
+        openReports: [
+            {
+                date: '12.03.2026',
+                time: '07:45 - 08:30',
+                course: 'COURSE-ALPHA'
+            }
+        ],
+        tardiness: [
+            {
+                date: '19.12.2025',
+                lesson: '09:35',
+                reason: undefined,
+                timespan: '5',
+                excused: 'Nein'
+            }
+        ],
+        missedExams: 1,
+        tardinessSummary: {
+            excused: 0,
+            unexcused: 1
+        }
+    });
 });
 
 test('get user info from html', async () => {
