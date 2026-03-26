@@ -78,7 +78,7 @@ Key insights:
 - Use `/api/meta` for frontend bootstrap metadata (feature flags + effective mandators) rather than hardcoding deployment assumptions.
 - For scraping changes, support both legacy and current KASCHUSO HTML where practical.
 - When updating parsers, add or update fixture-based tests in `services/kaschuso-api.test.js`.
-- Sanitize fixtures before committing them: replace student names, teacher-coded course tokens, phone numbers, emails, and credentials with generic placeholders whenever possible.
+- Sanitize fixtures before committing them: replace student names, teacher-coded course tokens, phone numbers, emails, credentials, birth dates, postal codes (PLZ/ZIP), and hometown values with generic placeholders whenever possible.
 
 ## Scraping Pitfalls
 - Do not reintroduce legacy browser fingerprint headers in `DEFAULT_HEADERS`; upstream can return `403`.
@@ -91,6 +91,7 @@ Key insights:
 - Session cookies may rotate between requests; always merge and forward accumulated cookies.
 - The homepage `Ihre letzten Noten` table is a separate unconfirmed/latest-uploaded feed and should not be treated as identical to the full grades page semantics.
 - `gymli` lives on `portal.sbl.ch` and may render table detail rows with fewer columns than classic KASCHUSO pages; parser logic must remain resilient to both shapes.
+- SAL user profile tables may use label aliases (for example `Name Vorname`, `Strasse`, `PLZ Ort`, `Profil`) instead of legacy keys; parser logic should map aliases without breaking existing responses.
 - SAL homepage may occasionally return logout shells (`"pageType": "logout"`) even after successful auth; this triggers automatic re-authentication in `getHomepageAndHeaders`.
 - Parsed user info for SAL (`gymli`) may have missing fields (e.g., `address`, `education`, `class`) depending on schulNetz field visibility; do not assume all fields are populated.
 

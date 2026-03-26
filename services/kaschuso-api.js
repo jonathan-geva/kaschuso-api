@@ -687,8 +687,11 @@ async function getUserInfoFromHtml(homeHtml, settingsHtml, mandator, username) {
             const row = $home(x)
                 .find('td')
                 .toArray()
-                .map(x => $home(x).text());
-            infos[row[0]] = row[1];
+                .map(x => $home(x).text().replace(/\s+/g, ' ').trim());
+
+            if (row.length >= 2 && row[0]) {
+                infos[row[0]] = row[1] || '';
+            }
         }));
 
     const $settings = cheerio.load(settingsHtml);
@@ -696,14 +699,28 @@ async function getUserInfoFromHtml(homeHtml, settingsHtml, mandator, username) {
     const email = $settings('#f0').attr('value');
     const privateEmail = $settings('#f1').attr('value');
 
+    const getInfoByAliases = (...aliases) => {
+        for (const alias of aliases) {
+            if (Object.prototype.hasOwnProperty.call(infos, alias) && infos[alias]) {
+                return infos[alias];
+            }
+        }
+        for (const alias of aliases) {
+            if (Object.prototype.hasOwnProperty.call(infos, alias)) {
+                return infos[alias];
+            }
+        }
+        return undefined;
+    };
+
     return {
         mandator: mandator,
         username: username,
-        name: infos['Name'],
-        address: infos['Adresse'],
-        zipCity: infos['Ort'],
+        name: getInfoByAliases('Name', 'Name Vorname'),
+        address: getInfoByAliases('Adresse', 'Strasse'),
+        zipCity: getInfoByAliases('Ort', 'PLZ Ort'),
         birthdate: infos['Geburtsdatum'],
-        education: infos['Ausbildungsgang'],
+        education: getInfoByAliases('Ausbildungsgang', 'Profil'),
         hometown: infos['Heimatort'],
         phone: infos['Telefon'],
         mobile: infos['Mobiltelefon'],

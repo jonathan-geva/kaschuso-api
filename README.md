@@ -506,6 +506,7 @@ Expected:
 - SAL authentication succeeds but protected pages return error: This typically indicates the session was invalidated by re-requesting the Webtop or homepage immediately after auth. The service now avoids this via careful session handling.
 - If logout appears in response after successful auth, the session context was not preserved properly. The service automatically re-authenticates once if this is detected.
 - Empty user info or missing fields: SAL's schulNetz may expose fewer fields depending on school configuration (e.g., `address`, `education` may be empty).
+- User info label variants are supported for SAL profile tables (for example `Name Vorname`, `Strasse`, `PLZ Ort`, `Profil`), so parsing stays resilient across school-specific field labels.
 - Check that `ENABLE_SAL_PORTAL=true` in `.env` (default yes). Confirm `SAL_BASE_URL=https://portal.sbl.ch/` is set.
 
 ## Development
@@ -519,7 +520,7 @@ Project layout:
 
 Fixture guidance:
 
-- Keep fixtures privacy-safe and replace personal names, teacher-coded class identifiers, contact details, and credentials with generic placeholders whenever they are not required for parser coverage.
+- Keep fixtures privacy-safe and replace personal names, teacher-coded class identifiers, contact details, credentials, birth dates, postal codes (PLZ/ZIP), and hometown values with generic placeholders whenever they are not required for parser coverage.
 
 Run tests:
 

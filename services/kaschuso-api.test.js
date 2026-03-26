@@ -612,6 +612,53 @@ test('get user info from html', async () => {
     expect(result.privateEmail).toContain('@');
 });
 
+test('get user info from SAL html label variants', async () => {
+    const homeHtml = `
+        <div id="content-card">
+            <div>
+                <div>
+                    <table>
+                        <tbody>
+                            <tr><td>Name Vorname</td><td>Test Student</td></tr>
+                            <tr><td>Strasse</td><td>Example Street 12</td></tr>
+                            <tr><td>PLZ Ort</td><td>0000 Placeholder City</td></tr>
+                            <tr><td>Geburtsdatum</td><td>01.01.2000</td></tr>
+                            <tr><td>Profil</td><td>Schwerpunkt Wirtschaft und Recht</td></tr>
+                            <tr><td>Heimatort</td><td>Placeholder Hometown</td></tr>
+                            <tr><td>Telefon</td><td>000 000 00 00</td></tr>
+                            <tr><td>Mobiltelefon</td><td>000 000 00 01</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const settingsHtml = `
+        <form>
+            <input id="f0" value="" />
+            <input id="f1" value="student@example.com" />
+        </form>
+    `;
+
+    const result = await getUserInfoFromHtml(homeHtml, settingsHtml, 'gymli', 'e265218');
+
+    expect(result).toMatchObject({
+        mandator: 'gymli',
+        username: 'e265218',
+        name: 'Test Student',
+        address: 'Example Street 12',
+        zipCity: '0000 Placeholder City',
+        birthdate: '01.01.2000',
+        education: 'Schwerpunkt Wirtschaft und Recht',
+        hometown: 'Placeholder Hometown',
+        phone: '000 000 00 00',
+        mobile: '000 000 00 01',
+        email: '',
+        privateEmail: 'student@example.com'
+    });
+});
+
 test('get current requested page from html', async () => {
     const html = fs.readFileSync('./__test__/login.html', 'utf8');
     expect(getCurrentRequestedPageFromHtml(html))
