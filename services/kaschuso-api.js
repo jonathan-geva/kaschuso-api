@@ -928,14 +928,60 @@ async function getAbsencesFromHtml(html) {
     // GymLi/schulNetz point-based absences layout.
     const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
     const lower = value => normalize(value).toLowerCase();
-    const isDate = value => /\d{2}\.\d{2}\.\d{4}/.test(normalize(value));
+    const getDate = value => {
+        const match = normalize(value).match(/(\d{2}\.\d{2}\.\d{4})/);
+        return match ? match[1] : null;
+    };
+    const getDirectRows = table => {
+        const tbody = $(table).children('tbody').first();
+        const container = tbody.length ? tbody : $(table);
+        return container.children('tr').toArray();
+    };
+    const getDirectCells = row => $(row).children('th,td').toArray();
+    const findHeaderIndex = (headerCells, predicate) => headerCells.findIndex(predicate);
+    const extractCountFromLabelRows = (labelRegex, preferLast = false) => {
+        const matches = [];
+
+        $('table').toArray().forEach(table => {
+            getDirectRows(table).forEach(row => {
+                const cells = getDirectCells(row);
+                if (cells.length < 2) {
+                    return;
+                }
+
+                for (let i = 0; i < cells.length - 1; i++) {
+                    const labelText = lower($(cells[i]).text());
+                    if (!labelRegex.test(labelText)) {
+                        continue;
+                    }
+
+                    const valueText = normalize(cells.slice(i + 1).map(cell => $(cell).text()).join(' '));
+                    const numbers = valueText.match(/\d+/g);
+                    if (numbers && numbers.length > 0) {
+                        matches.push(...numbers.map(number => Number(number)));
+                    }
+                }
+            });
+        });
+
+        if (matches.length === 0) {
+            return null;
+        }
+
+        return preferLast ? matches[matches.length - 1] : matches[0];
+    };
 
     const incidents = [];
     const openReports = [];
     const tardiness = [];
 
     $('table.mdl-table--listtable, table.mdl-data-table').toArray().forEach(table => {
-        const headerCells = $(table).find('tr').first().find('th').toArray().map(cell => lower($(cell).text()));
+        const rows = getDirectRows(table);
+        if (rows.length === 0) {
+            return;
+        }
+
+        const headerCells = getDirectCells(rows[0]).map(cell => lower($(cell).text()));
 
         if (headerCells.length === 0) {
             return;
@@ -951,21 +997,49 @@ async function getAbsencesFromHtml(html) {
             && headerCells.includes('lektion')
             && headerCells.some(value => value.includes('zeitspanne'));
 
-        const rows = $(table).find('tr').toArray().slice(1);
+        const dateFromIdx = findHeaderIndex(headerCells, value => value.includes('datum von'));
+        const dateToIdx = findHeaderIndex(headerCells, value => value.includes('datum bis'));
+        const reasonIdx = findHeaderIndex(headerCells, value => value === 'grund' || value.endsWith(' grund') || value.startsWith('grund '));
+        const pointsIdx = findHeaderIndex(headerCells, value => value.includes('absenzpunkte'));
+
+        const openDateIdx = findHeaderIndex(headerCells, value => value === 'datum');
+        const openTimeIdx = findHeaderIndex(headerCells, value => value === 'zeit');
+        const openCourseIdx = findHeaderIndex(headerCells, value => value === 'kurs');
+
+        const tardyDateIdx = findHeaderIndex(headerCells, value => value === 'datum');
+        const tardyLessonIdx = findHeaderIndex(headerCells, value => value === 'lektion');
+        const tardyReasonIdx = findHeaderIndex(headerCells, value => value === 'grund' || value.endsWith(' grund') || value.startsWith('grund '));
+        const tardyTimespanIdx = findHeaderIndex(headerCells, value => value.includes('zeitspanne'));
+        const tardyExcusedIdx = findHeaderIndex(headerCells, value => value.includes('entschuldigt'));
+
+        const dataRows = rows.slice(1);
 
         if (isIncidentsTable) {
-            rows.forEach(row => {
-                const cells = $(row).find('td').toArray();
-                if (cells.length < 5) {
+            dataRows.forEach(row => {
+                const cells = getDirectCells(row);
+                if (cells.length === 0) {
                     return;
                 }
 
-                const date = normalize($(cells[0]).text());
-                const untilDate = normalize($(cells[1]).text());
-                const reason = normalize($(cells[2]).text()) || undefined;
-                const points = normalize($(cells[4]).text()) || undefined;
+                const requiredIncidentsIndex = Math.max(dateFromIdx, dateToIdx, pointsIdx, reasonIdx, 0);
+                if (cells.length <= requiredIncidentsIndex) {
+                    return;
+                }
 
-                if (!isDate(date)) {
+                const date = getDate(cells[dateFromIdx >= 0 ? dateFromIdx : 0] ? $(cells[dateFromIdx >= 0 ? dateFromIdx : 0]).text() : '');
+                const untilDate = getDate(cells[dateToIdx >= 0 ? dateToIdx : (dateFromIdx >= 0 ? dateFromIdx : 0)]
+                    ? $(cells[dateToIdx >= 0 ? dateToIdx : (dateFromIdx >= 0 ? dateFromIdx : 0)]).text()
+                    : '') || date;
+                const reason = reasonIdx >= 0 && cells[reasonIdx]
+                    ? (normalize($(cells[reasonIdx]).text()) || undefined)
+                    : undefined;
+                const pointsRaw = pointsIdx >= 0 && cells[pointsIdx]
+                    ? normalize($(cells[pointsIdx]).text())
+                    : '';
+                const pointsMatch = pointsRaw.match(/-?\d+(?:[.,]\d+)?/);
+                const points = pointsMatch ? pointsMatch[0] : (pointsRaw || undefined);
+
+                if (!date) {
                     return;
                 }
 
@@ -980,17 +1054,28 @@ async function getAbsencesFromHtml(html) {
         }
 
         if (isOpenReportsTable) {
-            rows.forEach(row => {
-                const cells = $(row).find('td').toArray();
-                if (cells.length < 3) {
+            dataRows.forEach(row => {
+                const cells = getDirectCells(row);
+                if (cells.length === 0) {
                     return;
                 }
 
-                const date = normalize($(cells[0]).text());
-                const time = normalize($(cells[1]).text());
-                const course = normalize($(cells[2]).text()) || undefined;
+                const requiredOpenReportsIndex = Math.max(openDateIdx, openTimeIdx, openCourseIdx, 0);
+                if (cells.length <= requiredOpenReportsIndex) {
+                    return;
+                }
 
-                if (!isDate(date)) {
+                const date = getDate(cells[openDateIdx >= 0 ? openDateIdx : 0]
+                    ? $(cells[openDateIdx >= 0 ? openDateIdx : 0]).text()
+                    : '');
+                const time = openTimeIdx >= 0 && cells[openTimeIdx]
+                    ? normalize($(cells[openTimeIdx]).text())
+                    : normalize($(cells[1]).text());
+                const course = openCourseIdx >= 0 && cells[openCourseIdx]
+                    ? (normalize($(cells[openCourseIdx]).text()) || undefined)
+                    : (normalize($(cells[2]).text()) || undefined);
+
+                if (!date) {
                     return;
                 }
 
@@ -1004,19 +1089,34 @@ async function getAbsencesFromHtml(html) {
         }
 
         if (isTardinessTable) {
-            rows.forEach(row => {
-                const cells = $(row).find('td').toArray();
-                if (cells.length < 5) {
+            dataRows.forEach(row => {
+                const cells = getDirectCells(row);
+                if (cells.length === 0) {
                     return;
                 }
 
-                const date = normalize($(cells[0]).text());
-                const lesson = normalize($(cells[1]).text()) || undefined;
-                const reason = normalize($(cells[2]).text()) || undefined;
-                const timespan = normalize($(cells[3]).text()) || undefined;
-                const excused = normalize($(cells[4]).text()) || undefined;
+                const requiredTardinessIndex = Math.max(tardyDateIdx, tardyLessonIdx, tardyReasonIdx, tardyTimespanIdx, tardyExcusedIdx, 0);
+                if (cells.length <= requiredTardinessIndex) {
+                    return;
+                }
 
-                if (!isDate(date)) {
+                const date = getDate(cells[tardyDateIdx >= 0 ? tardyDateIdx : 0]
+                    ? $(cells[tardyDateIdx >= 0 ? tardyDateIdx : 0]).text()
+                    : '');
+                const lesson = tardyLessonIdx >= 0 && cells[tardyLessonIdx]
+                    ? (normalize($(cells[tardyLessonIdx]).text()) || undefined)
+                    : (normalize($(cells[1]).text()) || undefined);
+                const reason = tardyReasonIdx >= 0 && cells[tardyReasonIdx]
+                    ? (normalize($(cells[tardyReasonIdx]).text()) || undefined)
+                    : (normalize($(cells[2]).text()) || undefined);
+                const timespan = tardyTimespanIdx >= 0 && cells[tardyTimespanIdx]
+                    ? (normalize($(cells[tardyTimespanIdx]).text()) || undefined)
+                    : (normalize($(cells[3]).text()) || undefined);
+                const excused = tardyExcusedIdx >= 0 && cells[tardyExcusedIdx]
+                    ? (normalize($(cells[tardyExcusedIdx]).text()) || undefined)
+                    : (normalize($(cells[4]).text()) || undefined);
+
+                if (!date) {
                     return;
                 }
 
@@ -1032,15 +1132,27 @@ async function getAbsencesFromHtml(html) {
     });
 
     const pageText = normalize($.root().text());
+    const totalContingentFromRows = extractCountFromLabelRows(/(^|\s)kontingent:?($|\s)/i);
+    const remainingContingentFromRows = extractCountFromLabelRows(/verbleibendes\s+kontingent:?/i, true);
     const totalContingentMatch = pageText.match(/Kontingent:\s*(\d+)/i);
-    const remainingContingentMatch = pageText.match(/Verbleibendes\s+Kontingent:\s*(\d+)/i);
+    const remainingContingentMatch = pageText.match(/Verbleibendes\s+Kontingent:\s*((?:\d+\s*){1,4})/i);
     const missedExamsMatch = pageText.match(/Verpasste\s+Prüfungen:\s*(\d+)/i);
+    const excusedTardinessFromRows = extractCountFromLabelRows(/entschuldigt:?/i);
+    const unexcusedTardinessFromRows = extractCountFromLabelRows(/unentschuldigt:?/i);
     const excusedTardinessMatch = pageText.match(/Entschuldigt:\s*(\d+)/i);
     const unexcusedTardinessMatch = pageText.match(/Unentschuldigt:\s*(\d+)/i);
 
+    const remainingFromText = remainingContingentMatch
+        ? (remainingContingentMatch[1].match(/\d+/g) || []).map(value => Number(value)).pop()
+        : null;
+
     const pointsSummary = {
-        total: totalContingentMatch ? Number(totalContingentMatch[1]) : null,
-        remaining: remainingContingentMatch ? Number(remainingContingentMatch[1]) : null
+        total: totalContingentFromRows != null
+            ? totalContingentFromRows
+            : (totalContingentMatch ? Number(totalContingentMatch[1]) : null),
+        remaining: remainingContingentFromRows != null
+            ? remainingContingentFromRows
+            : (remainingFromText != null ? remainingFromText : null)
     };
     pointsSummary.used = pointsSummary.total != null && pointsSummary.remaining != null
         ? pointsSummary.total - pointsSummary.remaining
@@ -1064,8 +1176,12 @@ async function getAbsencesFromHtml(html) {
         tardiness,
         missedExams: missedExamsMatch ? Number(missedExamsMatch[1]) : null,
         tardinessSummary: {
-            excused: excusedTardinessMatch ? Number(excusedTardinessMatch[1]) : null,
-            unexcused: unexcusedTardinessMatch ? Number(unexcusedTardinessMatch[1]) : null
+            excused: excusedTardinessFromRows != null
+                ? excusedTardinessFromRows
+                : (excusedTardinessMatch ? Number(excusedTardinessMatch[1]) : null),
+            unexcused: unexcusedTardinessFromRows != null
+                ? unexcusedTardinessFromRows
+                : (unexcusedTardinessMatch ? Number(unexcusedTardinessMatch[1]) : null)
         }
     };
 }

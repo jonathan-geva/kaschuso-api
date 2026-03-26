@@ -592,6 +592,135 @@ test('get absences from SAL point-based layout with open reports and tardiness',
     });
 });
 
+test('get absences from SAL layout ignores nested detail tables and keeps contingent values', async () => {
+    const html = `
+    <div>
+        <h3>Absenzenauszug - W</h3>
+        <table class="mdl-data-table mdl-table--listtable">
+            <tbody>
+                <tr><th>Datum von</th><th>Datum bis</th><th>Grund</th><th>Absenzpunkte</th></tr>
+                <tr><td>26.01.2026</td><td>04.02.2026</td><td></td><td>10</td></tr>
+                <tr>
+                    <td colspan="4">
+                        Zu dieser Absenz erfassten Meldungen:
+                        <table>
+                            <tr><td>29.01.2026</td><td>10:35 - 11:20</td><td>COURSE-ALPHA</td></tr>
+                            <tr><td>30.01.2026</td><td>11:30 - 12:15</td><td>COURSE-BRAVO</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr><td>13.02.2026</td><td>13.02.2026</td><td></td><td>3</td></tr>
+            </tbody>
+        </table>
+
+        <table>
+            <tbody>
+                <tr><td>Anzahl Ereignisse:</td><td>2</td><td>Kontingent:</td><td>30</td></tr>
+                <tr><td>Verbleibendes Kontingent:</td><td>17</td></tr>
+            </tbody>
+        </table>
+
+        <div>Verpasste Prüfungen: 1</div>
+        <table class="mdl-data-table mdl-table--listtable">
+            <tbody>
+                <tr><th>Kurs</th><th>Datum</th><th>Lektion</th></tr>
+                <tr><td>COURSE-INDIA</td><td>30.01.2026</td><td>10:35 - 11:20</td></tr>
+            </tbody>
+        </table>
+
+        <h4>Offene Absenzmeldungen</h4>
+        <table class="mdl-data-table mdl-table--listtable">
+            <tbody>
+                <tr><th>Datum</th><th>Zeit</th><th>Kurs</th></tr>
+                <tr><td>12.03.2026</td><td>07:45 - 08:30</td><td>COURSE-CHARLIE</td></tr>
+                <tr><td>12.03.2026</td><td>08:40 - 09:25</td><td>COURSE-CHARLIE</td></tr>
+            </tbody>
+        </table>
+
+        <h4>Verspätungen</h4>
+        <table class="mdl-data-table mdl-table--listtable">
+            <tbody>
+                <tr><th>Datum</th><th>Lektion</th><th>Grund</th><th>Zeitspanne</th><th>Entschuldigt</th></tr>
+                <tr><td>Fr, 19.12.2025</td><td>09:35</td><td></td><td>5</td><td>Nein</td></tr>
+            </tbody>
+        </table>
+        <table>
+            <tbody>
+                <tr><td>Entschuldigt:</td><td>0</td></tr>
+                <tr><td>Unentschuldigt:</td><td>1</td></tr>
+            </tbody>
+        </table>
+    </div>`;
+
+    expect(await getAbsencesFromHtml(html)).toEqual({
+        absences: [
+            {
+                date: '26.01.2026',
+                reason: undefined,
+                status: 'Absence points',
+                period: '26.01.2026 - 04.02.2026',
+                subject: '-',
+                points: '10',
+                untilDate: '04.02.2026'
+            },
+            {
+                date: '13.02.2026',
+                reason: undefined,
+                status: 'Absence points',
+                period: '13.02.2026',
+                subject: '-',
+                points: '3',
+                untilDate: '13.02.2026'
+            }
+        ],
+        pointsSummary: {
+            total: 30,
+            remaining: 17,
+            used: 13
+        },
+        incidents: [
+            {
+                date: '26.01.2026',
+                untilDate: '04.02.2026',
+                reason: undefined,
+                points: '10'
+            },
+            {
+                date: '13.02.2026',
+                untilDate: '13.02.2026',
+                reason: undefined,
+                points: '3'
+            }
+        ],
+        openReports: [
+            {
+                date: '12.03.2026',
+                time: '07:45 - 08:30',
+                course: 'COURSE-CHARLIE'
+            },
+            {
+                date: '12.03.2026',
+                time: '08:40 - 09:25',
+                course: 'COURSE-CHARLIE'
+            }
+        ],
+        tardiness: [
+            {
+                date: '19.12.2025',
+                lesson: '09:35',
+                reason: undefined,
+                timespan: '5',
+                excused: 'Nein'
+            }
+        ],
+        missedExams: 1,
+        tardinessSummary: {
+            excused: 0,
+            unexcused: 1
+        }
+    });
+});
+
 test('get user info from html', async () => {
     const homeHtml = fs.readFileSync('./__test__/start.html', 'utf8');
     const settingsHtml = fs.readFileSync('./__test__/settings.html', 'utf8');
