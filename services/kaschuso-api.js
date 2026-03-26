@@ -747,6 +747,120 @@ async function getGradesFromHtml(html) {
     const $ = cheerio.load(html);
     const isSwissDate = value => /^(\d{2})\.(\d{2})\.(\d{4})$/.test(String(value || '').trim());
 
+    // Prefer modern parser when listtable markup is present. Legacy selectors can
+    // accidentally match nested detail tables and return a partial subject list.
+    const parseModernListTable = tableElem => {
+        const subjects = [];
+        const body = $(tableElem).children('tbody').first();
+        const rows = (body.length ? body : $(tableElem)).children('tr').toArray();
+
+        const isSubjectHeaderRow = row => {
+            const tds = $(row).children('td');
+            if (tds.length < 2) {
+                return false;
+            }
+
+            const firstHtml = $(tds[0]).html() || '';
+            return /<b>[^<]+<\/b>/i.test(firstHtml);
+        };
+
+        const parseGradesFromDetailTable = detailTable => {
+            $(detailTable).find('tr').toArray().forEach(detailTr => {
+                const detailTds = $(detailTr).find('td');
+                if (detailTds.length < 4) {
+                    return;
+                }
+
+                // Header rows can be rendered as regular <td> cells with italic labels.
+                if ($(detailTr).find('i').length > 0) {
+                    return;
+                }
+
+                const hasLegacySixColumnLayout = detailTds.length >= 6;
+                const dateIdx = hasLegacySixColumnLayout ? 1 : 0;
+                const nameIdx = hasLegacySixColumnLayout ? 2 : 1;
+                const valueIdx = hasLegacySixColumnLayout ? 3 : 2;
+                const weightingIdx = hasLegacySixColumnLayout ? 4 : 3;
+
+                const date = $(detailTds[dateIdx]).text().trim();
+                const gradeName = $(detailTds[nameIdx]).text().trim();
+                const valueCell = $(detailTds[valueIdx]);
+                const valueRaw = valueCell.text().replace(/\s+/g, ' ').trim();
+                const valueMatch = valueRaw.match(/-?\d+(?:[.,]\d+)?/);
+                const value = valueMatch ? valueMatch[0] : valueRaw;
+                const weighting = ($(detailTds[weightingIdx]).text() || '').replace(/\s+/g, ' ').trim();
+                const classAverage = hasLegacySixColumnLayout
+                    ? ($(detailTds[5]).text() || '').replace(/\s+/g, ' ').trim()
+                    : undefined;
+
+                if (!isSwissDate(date) || !gradeName || !value || value === '--') {
+                    return;
+                }
+
+                const pointsMatch = valueCell.html() && valueCell.html().match(/Punkte:\s*([\d.,]+)/i);
+                subjects[subjects.length - 1].grades.push({
+                    date: date,
+                    name: gradeName,
+                    value: value,
+                    points: pointsMatch ? pointsMatch[1] : undefined,
+                    weighting: weighting,
+                    average: classAverage
+                });
+            });
+        };
+
+        for (let idx = 0; idx < rows.length; idx++) {
+            const row = rows[idx];
+            if (!isSubjectHeaderRow(row)) {
+                continue;
+            }
+
+            const tds = $(row).children('td');
+            const firstCell = $(tds[0]);
+            const firstHtml = firstCell.html() || '';
+            const classMatch = firstHtml.match(/<b>([^<]*)<\/b>/i);
+            if (!classMatch) {
+                continue;
+            }
+
+            const clazz = classMatch[1].trim();
+            const name = firstCell.clone().find('b').remove().end().text().replace(/\s+/g, ' ').trim();
+            const average = ($(tds[1]).text() || '').replace(/\s+/g, ' ').trim();
+
+            subjects.push({
+                class: clazz,
+                name: name,
+                average: average,
+                grades: []
+            });
+
+            let nextSubjectIdx = rows.length;
+            for (let lookAhead = idx + 1; lookAhead < rows.length; lookAhead++) {
+                if (isSubjectHeaderRow(rows[lookAhead])) {
+                    nextSubjectIdx = lookAhead;
+                    break;
+                }
+            }
+
+            rows.slice(idx + 1, nextSubjectIdx).forEach(betweenRow => {
+                $(betweenRow).find('table.clean').toArray().forEach(parseGradesFromDetailTable);
+            });
+        }
+
+        return subjects.filter(subject => subject.grades && subject.grades.length > 0);
+    };
+
+    const modernSubjects = $('#uebersicht_bloecke table.mdl-table--listtable').toArray()
+        .map(parseModernListTable)
+        .sort((left, right) => {
+            if (right.length !== left.length) {
+                return right.length - left.length;
+            }
+            const leftGrades = left.reduce((sum, subject) => sum + subject.grades.length, 0);
+            const rightGrades = right.reduce((sum, subject) => sum + subject.grades.length, 0);
+            return rightGrades - leftGrades;
+        })[0] || [];
+
     const legacySubjects = (await Promise.all($('#uebersicht_bloecke>page>div>table')
         // find table with grades for each subject
         .find('tbody>tr>td>table')
@@ -758,8 +872,18 @@ async function getGradesFromHtml(html) {
                 .toArray()
                 .map(x => $(x).html());
 
-            const clazz = subjectsRowCells[0].match('<b>([^<]*)<\\/b>')[1];
-            const name = subjectsRowCells[0].match('<br>([^<]*)')[1];
+            if (subjectsRowCells.length < 2) {
+                return null;
+            }
+
+            const classMatch = String(subjectsRowCells[0] || '').match('<b>([^<]*)<\\/b>');
+            const nameMatch = String(subjectsRowCells[0] || '').match('<br>([^<]*)');
+            if (!classMatch || !nameMatch) {
+                return null;
+            }
+
+            const clazz = classMatch[1];
+            const name = nameMatch[1];
             const average = subjectsRowCells[1].trim();
 
             // find all grades for a subject 
@@ -793,92 +917,29 @@ async function getGradesFromHtml(html) {
                 grades: grades
             };
         })))
+        .filter(Boolean)
         .filter(subjects => subjects.grades && subjects.grades.length > 0);
 
-    if (legacySubjects.length > 0) {
+    const modernScore = {
+        subjects: modernSubjects.length,
+        grades: modernSubjects.reduce((sum, subject) => sum + (subject.grades ? subject.grades.length : 0), 0)
+    };
+    const legacyScore = {
+        subjects: legacySubjects.length,
+        grades: legacySubjects.reduce((sum, subject) => sum + (subject.grades ? subject.grades.length : 0), 0)
+    };
+
+    if (modernScore.subjects > legacyScore.subjects) {
+        return modernSubjects;
+    }
+    if (legacyScore.subjects > modernScore.subjects) {
         return legacySubjects;
     }
+    if (modernScore.grades > legacyScore.grades) {
+        return modernSubjects;
+    }
 
-    // Newer schulNetz layout: subjects are listed in a mdl-table with hidden detail rows.
-    const subjects = [];
-    const mainTable = $('#uebersicht_bloecke table.mdl-table--listtable').first();
-    const rows = mainTable.children('tbody').children('tr').toArray();
-
-    rows.forEach((row, idx) => {
-        const tds = $(row).children('td');
-        if (tds.length < 2) {
-            return;
-        }
-
-        const firstCell = $(tds[0]);
-        const firstHtml = firstCell.html() || '';
-        const classMatch = firstHtml.match(/<b>([^<]*)<\/b>/i);
-        if (!classMatch) {
-            return;
-        }
-
-        const clazz = classMatch[1].trim();
-        const name = firstCell.clone().find('b').remove().end().text().replace(/\s+/g, ' ').trim();
-        const average = ($(tds[1]).text() || '').replace(/\s+/g, ' ').trim();
-
-        const grades = [];
-        const detailRow = rows.slice(idx + 1).find(nextRow => /_detailrow$/.test($(nextRow).attr('class') || ''));
-        if (detailRow) {
-            $(detailRow).find('table.clean tr').toArray().forEach(detailTr => {
-                const detailTds = $(detailTr).find('td');
-                if (detailTds.length < 4) {
-                    return;
-                }
-
-                // Header rows can be rendered as regular <td> cells with italic labels.
-                if ($(detailTr).find('i').length > 0) {
-                    return;
-                }
-
-                const hasLegacySixColumnLayout = detailTds.length >= 6;
-                const dateIdx = hasLegacySixColumnLayout ? 1 : 0;
-                const nameIdx = hasLegacySixColumnLayout ? 2 : 1;
-                const valueIdx = hasLegacySixColumnLayout ? 3 : 2;
-                const weightingIdx = hasLegacySixColumnLayout ? 4 : 3;
-
-                const date = $(detailTds[dateIdx]).text().trim();
-                const gradeName = $(detailTds[nameIdx]).text().trim();
-                const valueCell = $(detailTds[valueIdx]);
-                const valueRaw = valueCell.text().replace(/\s+/g, ' ').trim();
-                const valueMatch = valueRaw.match(/-?\d+(?:[.,]\d+)?/);
-                const value = valueMatch ? valueMatch[0] : valueRaw;
-                const weighting = ($(detailTds[weightingIdx]).text() || '').replace(/\s+/g, ' ').trim();
-                const classAverage = hasLegacySixColumnLayout
-                    ? ($(detailTds[5]).text() || '').replace(/\s+/g, ' ').trim()
-                    : undefined;
-
-                if (!isSwissDate(date) || !gradeName || !value || value === '--') {
-                    return;
-                }
-
-                const pointsMatch = valueCell.html() && valueCell.html().match(/Punkte:\s*([\d.,]+)/i);
-                grades.push({
-                    date: date,
-                    name: gradeName,
-                    value: value,
-                    points: pointsMatch ? pointsMatch[1] : undefined,
-                    weighting: weighting,
-                    average: classAverage
-                });
-            });
-        }
-
-        if (grades.length > 0) {
-            subjects.push({
-                class: clazz,
-                name: name,
-                average: average,
-                grades: grades
-            });
-        }
-    });
-
-    return subjects;
+    return legacySubjects;
 }
 
 async function getAbsences(mandator, username, password) {

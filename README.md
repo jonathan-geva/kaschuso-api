@@ -548,6 +548,7 @@ Expected:
 
 - Ensure authentication is true first.
 - Upstream HTML can change. This project includes parser support for legacy and newer KASCHUSO layout, but future upstream changes can still break scraping.
+- Some pages can contain both legacy and modern grade table structures at once. Parser logic should evaluate both and prefer the richer result (more subjects/grades) to avoid partial lists.
 
 ### `/api/mandators` returns empty list
 
@@ -585,6 +586,11 @@ Expected:
 - Empty user info or missing fields: SAL's schulNetz may expose fewer fields depending on school configuration (e.g., `address`, `education` may be empty).
 - User info label variants are supported for SAL profile tables (for example `Name Vorname`, `Strasse`, `PLZ Ort`, `Profil`), so parsing stays resilient across school-specific field labels.
 - Check that `ENABLE_SAL_PORTAL=true` in `.env` (default yes). Confirm `SAL_BASE_URL=https://portal.sbl.ch/` is set.
+
+### Grades parsing pitfalls (modern schulNetz)
+
+- Do not rely only on detail row classes ending with `_detailrow`; some pages use different class names while still embedding valid `table.clean` grade rows.
+- Detail tables may include header/label pseudo-rows (`Datum`, `Thema`, `Bewertung`, `Gewichtung`) rendered as regular `<td>` rows and these must be skipped during grade extraction.
 
 ## Development
 

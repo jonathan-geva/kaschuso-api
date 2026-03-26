@@ -383,6 +383,98 @@ test('get grades from modern layout with 4-column detail rows', async () => {
         ]);
 });
 
+test('get grades from modern layout includes all subjects with varied detail row classes', async () => {
+    const html = `
+    <div id="uebersicht_bloecke">
+        <table class="mdl-data-table mdl-table--listtable">
+            <tbody>
+                <tr>
+                    <td><b>EB-BM1_TE24B-RUEA</b><br>Englisch</td>
+                    <td>5.976</td>
+                </tr>
+                <tr class="0_9_detailrow" style="display:none;">
+                    <td colspan="5">
+                        <table class="clean">
+                            <tr><td><i>Datum</i></td><td><i>Thema</i></td><td><i>Bewertung</i></td><td><i>Gewichtung</i></td></tr>
+                            <tr><td>21.01.2026</td><td>Vocabulary EFI File 2A</td><td>6</td><td>0.5</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td><b>F-BM1_TE24B-BAYF</b><br>Franzoesisch</td>
+                    <td>4.779</td>
+                </tr>
+                <tr class="1_9_detailrow" style="display:none;">
+                    <td colspan="5">
+                        <table class="clean">
+                            <tr><td><i>Datum</i></td><td><i>Thema</i></td><td><i>Bewertung</i></td><td><i>Gewichtung</i></td></tr>
+                            <tr><td>17.02.2026</td><td>Jeu de role</td><td>5.25</td><td>0.5</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td><b>GP-BM1_TE24B-FIMJ</b><br>Geschichte und Politik</td>
+                    <td>5.714</td>
+                </tr>
+                <tr class="2_9_detailrow" style="display:none;">
+                    <td colspan="5">
+                        <table class="clean">
+                            <tr><td><i>Datum</i></td><td><i>Thema</i></td><td><i>Bewertung</i></td><td><i>Gewichtung</i></td></tr>
+                            <tr><td>18.02.2026</td><td>Aufstieg und Herrschaft</td><td>5.6</td><td>0.5</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td><b>M254-INF24A-GEHM</b><br>M254 Geschaeftsprozesse im eigenen Berufsumfeld beschreiben</td>
+                    <td>5.500</td>
+                </tr>
+                <tr class="detail-row" style="display:none;">
+                    <td colspan="5">
+                        <table class="clean">
+                            <tr><td><i>Datum</i></td><td><i>Thema</i></td><td><i>Bewertung</i></td><td><i>Gewichtung</i></td></tr>
+                            <tr>
+                                <td>19.03.2026</td>
+                                <td>Kurztest Aufbau-Ablauforganisation</td>
+                                <td>6<div><b>Details zur Note</b><br>Punkte: 15.5</div></td>
+                                <td>0.5</td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td><b>MG-BM1_TE24B-BRAS</b><br>Mathematik Grundlagen</td>
+                    <td>4.900</td>
+                </tr>
+                <tr class="mg_detail" style="display:none;">
+                    <td colspan="5">
+                        <table class="clean">
+                            <tr><td><i>Datum</i></td><td><i>Thema</i></td><td><i>Bewertung</i></td><td><i>Gewichtung</i></td></tr>
+                            <tr>
+                                <td>04.03.2026</td>
+                                <td>MA-Planimetrie</td>
+                                <td>4.9<div><b>Details zur Note</b><br>Punkte: 16.5</div></td>
+                                <td>1</td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>`;
+
+    const grades = await getGradesFromHtml(html);
+    expect(grades.map(subject => subject.class)).toEqual([
+        'EB-BM1_TE24B-RUEA',
+        'F-BM1_TE24B-BAYF',
+        'GP-BM1_TE24B-FIMJ',
+        'M254-INF24A-GEHM',
+        'MG-BM1_TE24B-BRAS'
+    ]);
+
+    expect(grades.find(subject => subject.class === 'M254-INF24A-GEHM').grades[0].points).toBe('15.5');
+    expect(grades.find(subject => subject.class === 'MG-BM1_TE24B-BRAS').grades[0].points).toBe('16.5');
+});
+
 test('get unconfirmed grades from html', async () => {
     const html = fs.readFileSync('./__test__/start.html', 'utf8');
     expect(await getUnconfirmedGradesFromHtml(html))

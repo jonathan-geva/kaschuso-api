@@ -91,7 +91,9 @@ Key insights:
 - Session cookies may rotate between requests; always merge and forward accumulated cookies.
 - The homepage `Ihre letzten Noten` table is a separate unconfirmed/latest-uploaded feed and should not be treated as identical to the full grades page semantics.
 - `gymli` lives on `portal.sbl.ch` and may render table detail rows with fewer columns than classic KASCHUSO pages; parser logic must remain resilient to both shapes.
+- Grade pages may include both legacy and modern table structures simultaneously; parser logic should compare both parse results and keep the richer one to avoid dropping subjects.
 - Modern grade detail tables can include label/header rows (`Datum`, `Thema`, `Bewertung`, `Gewichtung`) rendered as normal `<td>` rows; parser must skip these pseudo-rows.
+- Modern grade detail rows are not guaranteed to use `_detailrow` CSS class suffixes; detect detail content structurally (`table.clean` between subject rows) rather than class name alone.
 - For modern 4-column grade detail rows, row-level class average is often absent; do not copy subject average into each grade entry.
 - SAL user profile tables may use label aliases (for example `Name Vorname`, `Strasse`, `PLZ Ort`, `Profil`) instead of legacy keys; parser logic should map aliases without breaking existing responses.
 - SAL homepage may occasionally return logout shells (`"pageType": "logout"`) even after successful auth; this triggers automatic re-authentication in `getHomepageAndHeaders`.
