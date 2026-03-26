@@ -745,6 +745,7 @@ async function getGrades(mandator, username, password) {
 
 async function getGradesFromHtml(html) {
     const $ = cheerio.load(html);
+    const isSwissDate = value => /^(\d{2})\.(\d{2})\.(\d{4})$/.test(String(value || '').trim());
 
     const legacySubjects = (await Promise.all($('#uebersicht_bloecke>page>div>table')
         // find table with grades for each subject
@@ -829,6 +830,11 @@ async function getGradesFromHtml(html) {
                     return;
                 }
 
+                // Header rows can be rendered as regular <td> cells with italic labels.
+                if ($(detailTr).find('i').length > 0) {
+                    return;
+                }
+
                 const hasLegacySixColumnLayout = detailTds.length >= 6;
                 const dateIdx = hasLegacySixColumnLayout ? 1 : 0;
                 const nameIdx = hasLegacySixColumnLayout ? 2 : 1;
@@ -844,9 +850,9 @@ async function getGradesFromHtml(html) {
                 const weighting = ($(detailTds[weightingIdx]).text() || '').replace(/\s+/g, ' ').trim();
                 const classAverage = hasLegacySixColumnLayout
                     ? ($(detailTds[5]).text() || '').replace(/\s+/g, ' ').trim()
-                    : average;
+                    : undefined;
 
-                if (!date || !gradeName || !value || value === '--') {
+                if (!isSwissDate(date) || !gradeName || !value || value === '--') {
                     return;
                 }
 
