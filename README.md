@@ -271,7 +271,10 @@ Headers:
 
 - `Authorization: Bearer <token>`
 
-Returns absence entries.
+Returns absence entries. Response structure is unified across KASCHUSO (legacy) and SAL (modern F5-based) portals, but data extraction and availability differ:
+
+- **KASCHUSO**: Full support for absences, tardiness, open reports, incident details, and contingent tracking.
+- **SAL (GymLi)**: Absences and tardiness supported; parser is resilient to nested colspan rows and varying table column layouts; incident details extraction handles both nested tables and text-based formats; contingent tracking depends on portal field visibility.
 
 ## Example Calls
 
@@ -391,6 +394,80 @@ Unconfirmed grades response:
 	]
 }
 ```
+
+Absences response:
+
+```json
+{
+	"mandator": "example-school",
+	"username": "student.username",
+	"absences": [
+		{
+			"date": "29.01.2026",
+			"untilDate": "30.01.2026",
+			"reason": "Krankheit",
+			"status": "Absence points",
+			"subject": "Mathematik",
+			"points": "2",
+			"period": "2026-01-29 to 2026-01-30",
+			"details": [
+				{
+					"date": "29.01.2026",
+					"time": "14:15",
+					"course": "Mathematik Lektion 1"
+				}
+			]
+		}
+	],
+	"openReports": [
+		{
+			"date": "28.01.2026",
+			"untilDate": "28.01.2026",
+			"reason": "Open report",
+			"status": "Open report",
+			"subject": "",
+			"period": "2026-01-28"
+		}
+	],
+	"tardiness": [
+		{
+			"date": "27.01.2026",
+			"reason": "Excused",
+			"status": "Tardiness (Excused)"
+		}
+	],
+	"incidents": [
+		{
+			"date": "29.01.2026",
+			"period": "2 pts",
+			"details": [
+				{
+					"date": "29.01.2026",
+					"time": "14:15",
+					"course": "Mathematik Lektion 1"
+				}
+			]
+		}
+	],
+	"contingentUsed": "4",
+	"contingentRemaining": "13"
+}
+```
+
+**Portal differences:**
+- **Both KASCHUSO and SAL** return `absences[]`, `openReports[]`, `tardiness[]`, `incidents[]` in a unified shape.
+- **KASCHUSO** populates all fields reliably across portal versions.
+- **SAL (GymLi)** may omit `points` or `details[]` if absences lack point-based classification; incident rows may appear with different column orderings due to F5 table rendering variations.
+- **Tardiness counter** (`excused`/`unexcused`): Parser includes fallback logic for both portals—if summary counters are "0 | 0" but tardiness rows exist with "Ja"/"Nein" markers, row data is parsed directly.
+
+**Field meanings:**
+- `absences[]`: Individual absence entries (each may represent a date range).
+- `openReports[]`: Reports awaiting submission or confirmation.
+- `tardiness[]`: Late arrivals (excused/unexcused).
+- `incidents[]`: Point-based absence incidents with optional recorded lessons under `details[]`.
+- `AbsenceDetailEntry` (in `details`): `{ date, time, course }` — lesson recorded under an incident.
+- `points`: Contingent points consumed by the absence (may be null).
+- `contingentUsed`/`contingentRemaining`: Summary of absence point budget.
 
 ## Troubleshooting
 

@@ -661,7 +661,19 @@ test('get absences from SAL layout ignores nested detail tables and keeps contin
                 period: '26.01.2026 - 04.02.2026',
                 subject: '-',
                 points: '10',
-                untilDate: '04.02.2026'
+                untilDate: '04.02.2026',
+                details: [
+                    {
+                        date: '29.01.2026',
+                        time: '10:35 - 11:20',
+                        course: 'COURSE-ALPHA'
+                    },
+                    {
+                        date: '30.01.2026',
+                        time: '11:30 - 12:15',
+                        course: 'COURSE-BRAVO'
+                    }
+                ]
             },
             {
                 date: '13.02.2026',
@@ -683,7 +695,19 @@ test('get absences from SAL layout ignores nested detail tables and keeps contin
                 date: '26.01.2026',
                 untilDate: '04.02.2026',
                 reason: undefined,
-                points: '10'
+                points: '10',
+                details: [
+                    {
+                        date: '29.01.2026',
+                        time: '10:35 - 11:20',
+                        course: 'COURSE-ALPHA'
+                    },
+                    {
+                        date: '30.01.2026',
+                        time: '11:30 - 12:15',
+                        course: 'COURSE-BRAVO'
+                    }
+                ]
             },
             {
                 date: '13.02.2026',
@@ -714,6 +738,36 @@ test('get absences from SAL layout ignores nested detail tables and keeps contin
             }
         ],
         missedExams: 1,
+        tardinessSummary: {
+            excused: 0,
+            unexcused: 1
+        }
+    });
+});
+
+test('derive tardiness summary from rows when explicit counters are 0', async () => {
+    const html = `
+    <div>
+        <h4>Verspätungen</h4>
+        <table class="mdl-data-table mdl-table--listtable">
+            <tbody>
+                <tr><th>Datum</th><th>Lektion</th><th>Grund</th><th>Zeitspanne</th><th>Entschuldigt</th></tr>
+                <tr><td>19.12.2025</td><td>09:35</td><td></td><td>5</td><td>Nein</td></tr>
+            </tbody>
+        </table>
+        <div>Entschuldigt: 0</div>
+        <div>Unentschuldigt: 0</div>
+    </div>`;
+
+    expect(await getAbsencesFromHtml(html)).toMatchObject({
+        tardiness: [
+            {
+                date: '19.12.2025',
+                lesson: '09:35',
+                timespan: '5',
+                excused: 'Nein'
+            }
+        ],
         tardinessSummary: {
             excused: 0,
             unexcused: 1

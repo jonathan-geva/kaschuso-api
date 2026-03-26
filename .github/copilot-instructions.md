@@ -95,7 +95,25 @@ Key insights:
 - SAL homepage may occasionally return logout shells (`"pageType": "logout"`) even after successful auth; this triggers automatic re-authentication in `getHomepageAndHeaders`.
 - Parsed user info for SAL (`gymli`) may have missing fields (e.g., `address`, `education`, `class`) depending on schulNetz field visibility; do not assume all fields are populated.
 
-## Security And Logging
+### Absences Parsing
+- SAL absences tables contain nested colspan rows separating point-incident sections; use `getDirectRows()` to query only direct `<tbody>` → `<tr>` children, skipping nested detail tables.
+- Use header-index mapping (`findHeaderIndex()`) instead of hard positional cell indices; SAL table columns may vary and reordering is common.
+- Incident details ("Zu dieser Absenz erfassten Meldungen") appear in nested tables or as pipe-separated text under each incident row; parse with `extractIncidentDetailsFromRow()` and normalize to `AbsenceDetailEntry[]`.
+- Tardiness counter summary ("Entschuldigt: X | Unentschuldigt: Y") sometimes arrives as "0 | 0" despite rows with "Ja"/"Nein" values being present; implement fallback: if summary is zero/zero and rows exist, parse boolean cells directly with `normalizeBooleanLike()` and derive counts.
+- Absence points are stored in a dedicated `points` column; extract and preserve in API response; frontend uses these for display and tab count logic.
+- Contingent points (`contingentUsed`, `contingentRemaining`) should be extracted from a summary section if present; use safe numeric parsing to handle missing/invalid values.
+
+## Reference Files
+
+- Main API entry point and route mounting: `app.js`
+- Core scraping and parsing logic (authentication, absences, grades, user info): `services/kaschuso-api.js`
+- Test suite with fixtures and regression tests (absences, grades, login flows): `services/kaschuso-api.test.js`
+- Absences endpoint handler: `routes/api/absences.js`
+- Authentication endpoint handler (422 failure classification): `routes/api/authenticate.js`
+- Grades endpoint handler: `routes/api/grades.js`
+- API middleware (auth guard, rate limiting, request validation): `routes/api/middleware/`
+
+
 - This repository is publicly available on GitHub; never publish secrets, deploy hooks, tokens, credentials, private identifiers, or other privacy-related information in code, docs, tests, commits, or generated content.
 - Credentials must be accepted only via `POST /api/authenticate` JSON body (never via query params).
 - Protected endpoints must require bearer token auth and must reject credential query params.
