@@ -771,10 +771,9 @@ async function getGradesFromHtml(html) {
                     return;
                 }
 
-                // Header rows can be rendered as regular <td> cells with italic labels.
-                if ($(detailTr).find('i').length > 0) {
-                    return;
-                }
+                // Header/summary rows are filtered by structural checks below
+                // (e.g. non-date first column). Do not skip by <i> tags because
+                // real grade rows may include info-circle icons for points.
 
                 const hasLegacySixColumnLayout = detailTds.length >= 6;
                 const dateIdx = hasLegacySixColumnLayout ? 1 : 0;

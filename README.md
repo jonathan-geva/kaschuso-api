@@ -591,6 +591,7 @@ Expected:
 
 - Do not rely only on detail row classes ending with `_detailrow`; some pages use different class names while still embedding valid `table.clean` grade rows.
 - Detail tables may include header/label pseudo-rows (`Datum`, `Thema`, `Bewertung`, `Gewichtung`) rendered as regular `<td>` rows and these must be skipped during grade extraction.
+- Grade value cells can include info icons/tooltips (`Details zur Note`, `Punkte`) inside `<i>`/`<span>` markup. Do not treat presence of `<i>` tags alone as a header-row signal.
 
 ## Development
 

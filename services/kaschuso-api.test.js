@@ -334,7 +334,7 @@ test('get grades from modern layout with 4-column detail rows', async () => {
                     <table class="mdl-data-table mdl-table--listtable">
                         <tbody>
                             <tr>
-                                <td><b>M-2W-HnR</b><br>Mathematik</td>
+                                <td><b>COURSE-FOXTROT</b><br>Mathematik</td>
                                 <td>4.700</td>
                             </tr>
                             <tr class="0_9_detailrow" style="display:none;">
@@ -366,7 +366,7 @@ test('get grades from modern layout with 4-column detail rows', async () => {
 
         expect(await getGradesFromHtml(html)).toEqual([
                 {
-                        class: 'M-2W-HnR',
+                        class: 'COURSE-FOXTROT',
                         name: 'Mathematik',
                         average: '4.700',
                         grades: [
@@ -389,7 +389,7 @@ test('get grades from modern layout includes all subjects with varied detail row
         <table class="mdl-data-table mdl-table--listtable">
             <tbody>
                 <tr>
-                    <td><b>EB-BM1_TE24B-RUEA</b><br>Englisch</td>
+                    <td><b>COURSE-ALPHA</b><br>Englisch</td>
                     <td>5.976</td>
                 </tr>
                 <tr class="0_9_detailrow" style="display:none;">
@@ -401,7 +401,7 @@ test('get grades from modern layout includes all subjects with varied detail row
                     </td>
                 </tr>
                 <tr>
-                    <td><b>F-BM1_TE24B-BAYF</b><br>Franzoesisch</td>
+                    <td><b>COURSE-BRAVO</b><br>Franzoesisch</td>
                     <td>4.779</td>
                 </tr>
                 <tr class="1_9_detailrow" style="display:none;">
@@ -413,7 +413,7 @@ test('get grades from modern layout includes all subjects with varied detail row
                     </td>
                 </tr>
                 <tr>
-                    <td><b>GP-BM1_TE24B-FIMJ</b><br>Geschichte und Politik</td>
+                    <td><b>COURSE-CHARLIE</b><br>Geschichte und Politik</td>
                     <td>5.714</td>
                 </tr>
                 <tr class="2_9_detailrow" style="display:none;">
@@ -425,7 +425,7 @@ test('get grades from modern layout includes all subjects with varied detail row
                     </td>
                 </tr>
                 <tr>
-                    <td><b>M254-INF24A-GEHM</b><br>M254 Geschaeftsprozesse im eigenen Berufsumfeld beschreiben</td>
+                    <td><b>COURSE-DELTA</b><br>M254 Geschaeftsprozesse im eigenen Berufsumfeld beschreiben</td>
                     <td>5.500</td>
                 </tr>
                 <tr class="detail-row" style="display:none;">
@@ -435,14 +435,14 @@ test('get grades from modern layout includes all subjects with varied detail row
                             <tr>
                                 <td>19.03.2026</td>
                                 <td>Kurztest Aufbau-Ablauforganisation</td>
-                                <td>6<div><b>Details zur Note</b><br>Punkte: 15.5</div></td>
+                                <td>6<span><i class='far fa-info-circle'></i></span><div><b>Details zur Note</b><br>Punkte: 15.5</div></td>
                                 <td>0.5</td>
                             </tr>
                         </table>
                     </td>
                 </tr>
                 <tr>
-                    <td><b>MG-BM1_TE24B-BRAS</b><br>Mathematik Grundlagen</td>
+                    <td><b>COURSE-ECHO</b><br>Mathematik Grundlagen</td>
                     <td>4.900</td>
                 </tr>
                 <tr class="mg_detail" style="display:none;">
@@ -452,7 +452,7 @@ test('get grades from modern layout includes all subjects with varied detail row
                             <tr>
                                 <td>04.03.2026</td>
                                 <td>MA-Planimetrie</td>
-                                <td>4.9<div><b>Details zur Note</b><br>Punkte: 16.5</div></td>
+                                <td>4.9<span><i class='far fa-info-circle'></i></span><div><b>Details zur Note</b><br>Punkte: 16.5</div></td>
                                 <td>1</td>
                             </tr>
                         </table>
@@ -464,15 +464,15 @@ test('get grades from modern layout includes all subjects with varied detail row
 
     const grades = await getGradesFromHtml(html);
     expect(grades.map(subject => subject.class)).toEqual([
-        'EB-BM1_TE24B-RUEA',
-        'F-BM1_TE24B-BAYF',
-        'GP-BM1_TE24B-FIMJ',
-        'M254-INF24A-GEHM',
-        'MG-BM1_TE24B-BRAS'
+        'COURSE-ALPHA',
+        'COURSE-BRAVO',
+        'COURSE-CHARLIE',
+        'COURSE-DELTA',
+        'COURSE-ECHO'
     ]);
 
-    expect(grades.find(subject => subject.class === 'M254-INF24A-GEHM').grades[0].points).toBe('15.5');
-    expect(grades.find(subject => subject.class === 'MG-BM1_TE24B-BRAS').grades[0].points).toBe('16.5');
+    expect(grades.find(subject => subject.class === 'COURSE-DELTA').grades[0].points).toBe('15.5');
+    expect(grades.find(subject => subject.class === 'COURSE-ECHO').grades[0].points).toBe('16.5');
 });
 
 test('get unconfirmed grades from html', async () => {

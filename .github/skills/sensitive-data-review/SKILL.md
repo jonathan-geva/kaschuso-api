@@ -42,6 +42,13 @@ rg -n -i "([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?[0-9][0-9\-() ]{7,}[0-9]|(fi
 rg -n -i "(class\s+[0-9A-Za-z-]+|course\s+[0-9A-Za-z-]+|mandator|school|portal|resource_list|real user|real student|real teacher)" <scope>
 ```
 
+4b. Run teacher-coded/class-token scan (required for fixtures/tests/docs).
+- Search for school-coded identifiers that can expose class and teacher mappings (examples: `SUBJECT-CODE_A1-TEACHER`, `CLASS-TRACK_TERM-GROUP`, `MODULE-CODE_PROGRAM-OWNER`):
+```bash
+rg -n "\b[A-Z]{1,6}-[A-Z0-9]+(?:_[A-Z0-9]+)+(?:-[A-Z0-9]+)?\b|\b[A-Z]{1,6}-[A-Z0-9]+-[A-Z0-9]+\b" <scope>
+```
+- Treat hits in fixtures, tests, docs, logs, and examples as sensitive unless clearly synthetic placeholders.
+
 5. Triage each finding.
 - `True positive secret`: remove and rotate where required.
 - `True positive personal data`: replace with generic placeholders.
@@ -55,6 +62,7 @@ Only keep them when values are fully synthetic placeholders.
 
 6. Apply safe replacements.
 - Use placeholders like `STUDENT_NAME`, `TEACHER_NAME`, `COURSE_TOKEN`, `example@example.com`, `000-000-0000`.
+- Replace school-coded class/course identifiers with generic placeholders (for example `COURSE-ALPHA`, `COURSE-BRAVO`, `CLASS-GROUP-1`) and update assertions accordingly.
 - For location/date fields, use placeholders like `0000 Placeholder City`, `01.01.2000`, `Placeholder Hometown`.
 - Keep format shape intact for parser tests.
 - Do not weaken test coverage while sanitizing fixtures.
@@ -71,6 +79,7 @@ Only keep them when values are fully synthetic placeholders.
 ## Completion Checks
 - No high-confidence secret matches in current scope.
 - No real personal identifiers remain in changed files.
+- No teacher-coded or school-specific class tokens remain in fixtures/tests/docs unless they are explicitly synthetic placeholders.
 - Fixtures and docs use generic placeholders.
 - Any accepted false positives are explicitly justified in review notes.
 

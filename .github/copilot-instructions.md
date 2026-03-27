@@ -94,6 +94,7 @@ Key insights:
 - Grade pages may include both legacy and modern table structures simultaneously; parser logic should compare both parse results and keep the richer one to avoid dropping subjects.
 - Modern grade detail tables can include label/header rows (`Datum`, `Thema`, `Bewertung`, `Gewichtung`) rendered as normal `<td>` rows; parser must skip these pseudo-rows.
 - Modern grade detail rows are not guaranteed to use `_detailrow` CSS class suffixes; detect detail content structurally (`table.clean` between subject rows) rather than class name alone.
+- Real grade rows may include info-circle icon markup (`<i class="far fa-info-circle">`) for note details/points; do not skip rows only because they contain `<i>` tags.
 - For modern 4-column grade detail rows, row-level class average is often absent; do not copy subject average into each grade entry.
 - SAL user profile tables may use label aliases (for example `Name Vorname`, `Strasse`, `PLZ Ort`, `Profil`) instead of legacy keys; parser logic should map aliases without breaking existing responses.
 - SAL homepage may occasionally return logout shells (`"pageType": "logout"`) even after successful auth; this triggers automatic re-authentication in `getHomepageAndHeaders`.
