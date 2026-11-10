@@ -4,8 +4,8 @@ const SESSION_TTL_SECONDS = Number(process.env.API_SESSION_TTL_SECONDS || 900);
 const JWT_SECRET = process.env.JWT_SECRET;
 const SESSION_STORE = new Map();
 
-if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
-    throw new Error('JWT_SECRET must be set in production');
+if (process.env.NODE_ENV === 'production' && (!JWT_SECRET || Buffer.byteLength(JWT_SECRET, 'utf8') < 32 || /replace|change-me|dev-only/i.test(JWT_SECRET))) {
+    throw new Error('JWT_SECRET must be an independent strong secret of at least 32 bytes in production');
 }
 
 function getJwtSecret() {

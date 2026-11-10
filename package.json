@@ -7,6 +7,10 @@
     "start": "node ./app.js",
     "dev": "nodemon ./app.js",
     "test": "jest",
+    "test:mcp": "node --test mcp/tests/*.test.mjs",
+    "mcp:migrate": "node mcp/migrate.mjs",
+    "mcp:secrets": "node mcp/generate-secrets.mjs",
+    "check:privacy": "node scripts/check-privacy.mjs",
     "stop": "lsof -ti :3001 | xargs kill",
     "trace:sal": "node ./scripts/sal-trace.js"
   },
@@ -15,9 +19,12 @@
     "url": "git+https://github.com/GIBS-to-the-moon/kaschuso-api.git"
   },
   "dependencies": {
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "axios": "^1.8.2",
     "body-parser": "^1.20.3",
     "cheerio": "^1.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "crypto-random-string": "^3.3.1",
     "dotenv": "^16.4.5",
@@ -26,7 +33,10 @@
     "jsonwebtoken": "^9.0.2",
     "method-override": "^3.0.0",
     "morgan": "^1.10.0",
-    "qs": "^6.14.0"
+    "oidc-provider": "9.13.3",
+    "pg": "^8.16.3",
+    "qs": "^6.14.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "jest": "^29.7.0",

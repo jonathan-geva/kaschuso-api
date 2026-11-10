@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "kaschuso-grades",
+  "version": "0.1.0",
+  "description": "Interpret current school grades through an independently authenticated Kaschuso MCP connection.",
+  "author": { "name": "Kaschuso contributors" },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Kaschuso Grades",
+        "shortDescription": "Understand your school grades",
+        "developerName": "Kaschuso contributors",
+        "capabilities": [],
+        "defaultPrompt": "Help me understand my current school grades."
+      }
+    }
+  }
+}

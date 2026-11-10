@@ -13,3 +13,5 @@ services:
         sync: false
       - key: API_SESSION_TTL_SECONDS
         value: "900"
+      - key: ENABLE_MCP
+        value: "false"
