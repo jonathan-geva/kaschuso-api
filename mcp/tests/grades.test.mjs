@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gradeOverview, subjectGrades, projectGrade, swissDate, numberValue } from '../grades.mjs';
+import { gradeOverview, subjectGrades, projectGrade, unconfirmedGrades, swissDate, numberValue } from '../grades.mjs';
 
 const subjects = [
   { class: 'SYNTHETIC_COURSE_A', name: 'Mathematics', average: '5,0', grades: [
@@ -48,4 +48,12 @@ test('missing weights block exact projections and zero weights are excluded expl
   const zero = [{ ...subjects[0], grades: [...subjects[0].grades, { value: 'unsupported', weighting: '0' }] }];
   assert.equal(projectGrade(zero, { subject: 'Mathematics', targetAverage: 5, nextWeight: 1 }).requiredGrade, 5);
   assert.equal(projectGrade(subjects, { subject: 'Mathematics', targetAverage: 5, nextWeight: -1 }).error, 'INVALID_PROJECTION');
+});
+
+test('unconfirmed feed does not expose raw course identifiers or invent subject matches', () => {
+  const result = unconfirmedGrades([{ subject: 'SYNTHETIC_COURSE_A', name: 'Synthetic assessment', date: '01.01.2000', value: '5' }], 0, 50, subjects);
+  assert.equal(result.grades[0].subject, 'Mathematics');
+  assert.equal(JSON.stringify(result).includes('SYNTHETIC_COURSE'), false);
+  const unknown = unconfirmedGrades([{ subject: 'SYNTHETIC_UNKNOWN', name: 'Synthetic assessment', value: '5' }]);
+  assert.equal(unknown.grades[0].subject, null);
 });

@@ -496,7 +496,7 @@ Expected:
 2. Production startup smoke test.
 
 ```bash
-PORT=3001 NODE_ENV=production JWT_SECRET=replace-me FRONTEND_ORIGIN=https://app.example.com timeout 15s yarn start
+PORT=3001 NODE_ENV=production JWT_SECRET="$(openssl rand -base64 48)" FRONTEND_ORIGIN=https://app.example.com timeout 15s yarn start
 ```
 
 Expected:

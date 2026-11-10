@@ -12,7 +12,7 @@ const { createAuthSession, requireAuth } = require('../../routes/api/middleware/
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const jwk = { ...privateKey.export({ format: 'jwk' }), kid: 'synthetic-signing-key', use: 'sig', alg: 'RS256' };
 
-export async function harness() {
+export async function harness({ port = 0, frontendUrl = 'http://127.0.0.1:5173' } = {}) {
   const schema = `test_${randomUUID().replaceAll('-', '')}`;
   const pool = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL || 'postgres://postgres@127.0.0.1:55432/kaschuso_test', options: `-c search_path=${schema}` });
   await pool.query(`CREATE SCHEMA ${schema}`);
@@ -20,10 +20,10 @@ export async function harness() {
   const store = new Store(pool, vault);
   await store.migrate();
   const app = express();
-  const server = app.listen(0, '127.0.0.1');
+  const server = app.listen(port, '127.0.0.1');
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
-  const config = { publicUrl: base, issuer: `${base}/oauth`, resource: `${base}/mcp`, frontendUrl: 'http://127.0.0.1:5173', cookieKey: randomBytes(32).toString('base64'), secure: false, jwks: { keys: [jwk] } };
+  const config = { publicUrl: base, issuer: `${base}/oauth`, resource: `${base}/mcp`, frontendUrl, cookieKey: randomBytes(32).toString('base64'), secure: false, jwks: { keys: [jwk] } };
   const oauth = await createOAuth({ config, store, requireDashboard: requireAuth });
   app.use(oauth.router);
   app.use((error, req, res, next) => { if (res.headersSent) return next(error); res.status(503).json({ error: 'SERVICE_UNAVAILABLE' }); });

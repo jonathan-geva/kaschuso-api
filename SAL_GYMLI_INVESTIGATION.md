@@ -137,7 +137,7 @@ Implication:
 - From live page JS (`main.js`) and runtime introspection:
    - portal-access resources call `F5_Invoke_open(window, "open", uri, "_blank", "")`
    - for GymLi, the rewritten launch URI becomes:
-      - `https://portal.sbl.ch/f5-w-68747470733a2f2f706f7274616c2e73626c2e6368$$/gymli/`
+      - `https://portal.sbl.ch/f5-w-00000000000000000000000000000000$$/gymli/`
 - In this backend environment, requests to that rewritten URI repeatedly fail with transport reset (`ECONNRESET` / curl `Recv failure: Connection reset by peer`).
 - When falling back to direct GymLi URLs (`/gymli/`, `/gymli/loginto.php`), upstream responds but protected page access still lands in ACL denial context (`errorcode=17`).
 - The resulting behavior is a two-branch failure mode:
@@ -154,7 +154,7 @@ Implication:
 - Following that login CTA server-side does not consistently transition into page-link context; protected `pageid` requests still produce ACL denial (`errorcode=17`, `my.acl`).
 - Browser runtime introspection confirms F5 rewrite behavior used by webtop JS:
    - `F5_Invoke_open(..., "https://portal.sbl.ch/gymli/", ...)` rewrites to
-   - `https://portal.sbl.ch/f5-w-68747470733a2f2f706f7274616c2e73626c2e6368$$/gymli/`
+   - `https://portal.sbl.ch/f5-w-00000000000000000000000000000000$$/gymli/`
 - Browser-side experiments also show an XHR-style F5 path family (`/vdesk/f5-h-$$/...;F5CH=I`), but this did not produce usable schulNetz page context in backend replay attempts.
 
 ---

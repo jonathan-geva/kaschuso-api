@@ -71,11 +71,15 @@ export function projectGrade(subjects, { subject: value, targetAverage, nextWeig
   };
 }
 
-export function unconfirmedGrades(grades, offset = 0, limit = 50) {
+export function unconfirmedGrades(grades, offset = 0, limit = 50, subjects = []) {
   return {
     source: 'awaiting_confirmation_feed',
-    grades: grades.slice(offset, offset + limit).map(grade => ({ subject: text(grade.subject), name: text(grade.name), date: text(grade.date, 32), dateISO: swissDate(grade.date), value: text(grade.value, 32) })),
+    grades: grades.slice(offset, offset + limit).map(grade => {
+      const matches = subjects.filter(subject => subject.class === grade.subject || subject.name === grade.subject);
+      const matched = matches.length === 1 ? matches[0] : null;
+      return { subject: matched ? text(matched.name) : null, subjectReference: matched ? reference(matched) : `feed_${createHash('sha256').update(String(grade.subject)).digest('hex').slice(0, 24)}`, name: text(grade.name), date: text(grade.date, 32), dateISO: swissDate(grade.date), value: text(grade.value, 32) };
+    }),
     nextOffset: offset + limit < grades.length ? offset + limit : null,
-    limitation: 'This feed shows awaiting-confirmation grades. Assessment dates do not establish upload time.',
+    limitation: 'This feed shows awaiting-confirmation grades. Assessment dates do not establish upload time. Subject labels require an exact unique match; unavailable labels are not inferred.',
   };
 }

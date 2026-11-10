@@ -24,14 +24,14 @@ const {
 test('extract cookies from header', () => {
     expect(getCookiesFromHeaders({
         'set-cookie' : [
-            'SCDID_S=yacJ16u6KXqt9Q-JCFgJBfCvEVooQ9jGnHqvZhOqhlHPXPqwIUza9A$$#dMp5ltMsuiHcN8lzd5oJhjUNIYLu_aDomqWWvoKShT0$; path=/; Secure; HttpOnly',
+            'SCDID_S=SYNTHETIC_SESSION_0; path=/; Secure; HttpOnly',
             'SLSLanguage=de; Max-Age=94608000; Path=/; Secure; HttpOnly',
-            'PHPSESSID=6abvi005sklkauitprbspsoceu; path=/'
+            'PHPSESSID=SYNTHETIC_SESSION_1; path=/'
         ]
     })).toEqual({
-        'SCDID_S': 'yacJ16u6KXqt9Q-JCFgJBfCvEVooQ9jGnHqvZhOqhlHPXPqwIUza9A$$#dMp5ltMsuiHcN8lzd5oJhjUNIYLu_aDomqWWvoKShT0$',
+        'SCDID_S': 'SYNTHETIC_SESSION_0',
         'SLSLanguage': 'de',
-        'PHPSESSID': '6abvi005sklkauitprbspsoceu'
+        'PHPSESSID': 'SYNTHETIC_SESSION_1'
     });
 });
 
@@ -47,10 +47,10 @@ test('extract cookies with equals signs in value', () => {
 
 test('put cookies in header string', () => {
     expect(toCookieHeaderString({
-        'SCDID_S': 'yacJ16u6KXqt9Q-JCFgJBfCvEVooQ9jGnHqvZhOqhlHPXPqwIUza9A$$#dMp5ltMsuiHcN8lzd5oJhjUNIYLu_aDomqWWvoKShT0$',
+        'SCDID_S': 'SYNTHETIC_SESSION_0',
         'SLSLanguage': 'de',
-        'PHPSESSID': '6abvi005sklkauitprbspsoceu'
-    })).toBe('SCDID_S=yacJ16u6KXqt9Q-JCFgJBfCvEVooQ9jGnHqvZhOqhlHPXPqwIUza9A$$#dMp5ltMsuiHcN8lzd5oJhjUNIYLu_aDomqWWvoKShT0$; SLSLanguage=de; PHPSESSID=6abvi005sklkauitprbspsoceu');
+        'PHPSESSID': 'SYNTHETIC_SESSION_1'
+    })).toBe('SCDID_S=SYNTHETIC_SESSION_0; SLSLanguage=de; PHPSESSID=SYNTHETIC_SESSION_1');
 });
 
 test('detect authenticated session cookies by prefix', () => {

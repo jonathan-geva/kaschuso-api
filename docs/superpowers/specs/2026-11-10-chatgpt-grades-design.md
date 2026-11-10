@@ -1,6 +1,6 @@
 # Kaschuso grades in ChatGPT
 
-Status: proposed design, awaiting user approval.
+Status: approved for implementation, including removal of identifying personal information from source artifacts. Git attribution and repository account references are the authorized exceptions.
 
 ## Intent and decisions
 

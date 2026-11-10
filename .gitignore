@@ -37,3 +37,7 @@ node_modules
 .idea
 
 .env
+.env.mcp.local
+.env.*
+!.env.default
+!.env.production.example

@@ -9,6 +9,8 @@
     "test": "jest",
     "test:mcp": "node --test mcp/tests/*.test.mjs",
     "mcp:migrate": "node mcp/migrate.mjs",
+    "mcp:secrets": "node mcp/generate-secrets.mjs",
+    "check:privacy": "node scripts/check-privacy.mjs",
     "stop": "lsof -ti :3001 | xargs kill",
     "trace:sal": "node ./scripts/sal-trace.js"
   },

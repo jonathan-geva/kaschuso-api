@@ -39,7 +39,10 @@ export function mountMcp(app, { config, oauth, store, school }) {
     const grades = () => school.getGrades(mandator, username, password);
     tool('get_grade_overview', 'Get current subjects, portal averages and assessment counts. Use returned references to retrieve detailed grades.', z.object({}).strict(), async () => gradeOverview(await grades()));
     tool('get_subject_grades', 'Get paginated exam details and source weights for a subject. Subject averages and individual class averages are separate.', z.object({ subject: z.string().min(1).max(200), ...page }).strict(), async input => subjectGrades(await grades(), input));
-    tool('get_unconfirmed_grades', 'Get grades awaiting confirmation. The assessment date does not indicate when a grade was uploaded.', z.object(page).strict(), async input => unconfirmedGrades(await school.getUnconfirmedGrades(mandator, username, password), input.offset, input.limit));
+    tool('get_unconfirmed_grades', 'Get grades awaiting confirmation. The assessment date does not indicate when a grade was uploaded.', z.object(page).strict(), async input => {
+      const feed = await school.getUnconfirmedGrades(mandator, username, password);
+      return unconfirmedGrades(feed, input.offset, input.limit, feed.length ? await grades() : []);
+    });
     tool('calculate_grade_projection', 'Estimate the next grade needed for an exact unrounded subject-average target. Requires a supplied next-assessment weight; does not infer school rounding rules.', z.object({ subject: z.string().min(1).max(200), targetAverage: z.number().min(1).max(6), nextWeight: z.number().positive().max(10000) }).strict(), async input => projectGrade(await grades(), input));
     return server;
   }, { responseMode: 'auto', maxRequestBodySize: 16384, maxSubscriptions: 0 });
