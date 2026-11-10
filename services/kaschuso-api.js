@@ -6,6 +6,8 @@ const { spawnSync } = require('child_process');
 
 const axios = require('axios').default;
 axios.defaults.withCredentials = true;
+axios.defaults.timeout = 20000;
+const { runAccount } = require('./account-queue');
 
 const qs = require('qs');
 const cheerio = require('cheerio');
@@ -13,7 +15,7 @@ const cheerio = require('cheerio');
 const LEGACY_BASE_URL = process.env.KASCHUSO_BASE_URL || 'https://kaschuso.so.ch/';
 const SAL_BASE_URL = process.env.SAL_BASE_URL || 'https://portal.sbl.ch/';
 const ENABLE_SAL_PORTAL = String(process.env.ENABLE_SAL_PORTAL || 'true').toLowerCase() !== 'false';
-const SAL_DEBUG = String(process.env.SAL_DEBUG || 'false').toLowerCase() === 'true';
+const SAL_DEBUG = process.env.ENABLE_MCP !== 'true' && String(process.env.SAL_DEBUG || 'false').toLowerCase() === 'true';
 const SAL_USE_RESOURCE_INFO = String(process.env.SAL_USE_RESOURCE_INFO || 'false').toLowerCase() === 'true';
 const SAL_TRY_REWRITTEN_LAUNCH = String(process.env.SAL_TRY_REWRITTEN_LAUNCH || 'false').toLowerCase() === 'true';
 const ROBOTS_URL = LEGACY_BASE_URL + 'robots.txt';
@@ -144,7 +146,7 @@ const DEFAULT_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 };
 
-var cookiesMap = [];
+const cookiesMap = new Map();
 
 /**
  * Returns the first cookie that is essential to make *any* request.
@@ -169,7 +171,7 @@ function mergeCookies() {
 }
 
 async function authenticate(mandator, username, password) {
-    console.log('Authenticating: ' + username);
+    console.log('Authenticating school session');
 
     if (isSalMandator(mandator)) {
         return authenticateViaSalPortal(mandator, username, password);
@@ -664,7 +666,7 @@ function getActionFromSesJs(html) {
 }
 
 async function getUserInfo(mandator, username, password) {
-    console.log('Getting user info for: ' + username);
+    console.log('Getting school profile');
 
     const { headers, homeData, cookies } = await getHomepageAndHeaders(mandator, username, password);
     const settingsUrl = findUrlByPageid(mandator, homeData, SETTINGS_PAGE_ID);
@@ -730,7 +732,7 @@ async function getUserInfoFromHtml(homeHtml, settingsHtml, mandator, username) {
 }
 
 async function getGrades(mandator, username, password) {
-    console.log('Getting grades for: ' + username);
+    console.log('Getting school grades');
     
     const { headers, homeData, cookies } = await getHomepageAndHeaders(mandator, username, password);
     const gradesUrl = findUrlByPageid(mandator, homeData, GRADES_PAGE_ID);
@@ -942,7 +944,7 @@ async function getGradesFromHtml(html) {
 }
 
 async function getAbsences(mandator, username, password) {
-    console.log('Getting absences for: ' + username);
+    console.log('Getting school absences');
     
     const { headers, homeData, cookies } = await getHomepageAndHeaders(mandator, username, password);
     const absencesUrl = findUrlByPageid(mandator, homeData, ABSENCES_PAGE_ID);
@@ -1339,7 +1341,7 @@ async function getAbsencesFromHtml(html) {
 }
 
 async function getUnconfirmedGrades(mandator, username, password) {
-    console.log('Getting unconfirmed grades for: ' + username);
+    console.log('Getting unconfirmed school grades');
     
     const { homeData } = await getHomepageAndHeaders(mandator, username, password);
 
@@ -1878,7 +1880,7 @@ async function launchSalWebtopResource(mandator, cookies) {
     let mergedCookies = mergeCookies(cookies || {});
     
     if (SAL_DEBUG && mergedCookies[SAL_COOKIE_JAR_RAW_KEY]) {
-        console.warn('SAL debug: Launch cookie jar reused:', mergedCookies[SAL_COOKIE_JAR_RAW_KEY]);
+        console.warn('SAL debug: cached upstream session available');
     }
 
     // Keep SAL session transitions on curl+jars to match known-good manual flow semantics.
@@ -2157,11 +2159,13 @@ async function getHomepageAndHeaders(mandator, username, password) {
 }
 
 async function getCookies(mandator, username, password) {
-    const key = mandator + ":" + username;
-    let cookies = cookiesMap[key];
+    const key = JSON.stringify([normalizeMandatorName(mandator), username]);
+    const cached = cookiesMap.get(key);
+    let cookies = cached && cached.expiresAt > Date.now() ? cached.cookies : undefined;
+    if (!cookies) cookiesMap.delete(key);
     if (!cookies) {
         cookies = await authenticate(mandator, username, password);
-        cookiesMap[key] = cookies;
+        storeCookies(mandator, username, cookies);
     } else {
         // check if cookies are valid
         const homepageUrl = getHomepageUrlForMandator(mandator);
@@ -2185,11 +2189,11 @@ async function getCookies(mandator, username, password) {
         }
 
         if (!sessionLooksValid) {
-            console.log('Session expired for: ' + username);
+            console.log('School session expired');
             cookies = await authenticate(mandator, username, password);
-            cookiesMap[key] = cookies;
+            storeCookies(mandator, username, cookies);
         } else {
-            cookiesMap[key] = cookies;
+            storeCookies(mandator, username, cookies);
         }
     }
 
@@ -2197,7 +2201,17 @@ async function getCookies(mandator, username, password) {
 }
 
 function storeCookies(mandator, username, cookies) {
-    cookiesMap[mandator + ":" + username] = cookies;
+    const key = JSON.stringify([normalizeMandatorName(mandator), username]);
+    if (cookiesMap.size >= 1000 && !cookiesMap.has(key)) cookiesMap.delete(cookiesMap.keys().next().value);
+    cookiesMap.set(key, { cookies: cookies, expiresAt: Date.now() + 15 * 60 * 1000 });
+}
+
+function clearAccount(mandator, username) {
+    cookiesMap.delete(JSON.stringify([normalizeMandatorName(mandator), username]));
+}
+
+function serialized(operation) {
+    return (mandator, username, password) => runAccount(normalizeMandatorName(mandator), username, () => operation(normalizeMandatorName(mandator), username, password));
 }
 
 function toCookieHeaderString(cookies) {
@@ -2339,16 +2353,17 @@ axios.interceptors.response.use((response) => {
 });
 
 module.exports = {
-    authenticate,
+    authenticate: serialized(authenticate),
     getAuthenticationFailureInfo,
     hasAuthenticatedSessionCookie,
     mergeCookies,
-    getUserInfo,
-    getGrades,
-    getAbsences,
+    getUserInfo: serialized(getUserInfo),
+    getGrades: serialized(getGrades),
+    getAbsences: serialized(getAbsences),
     getMandators,
     getPortalMetadata,
-    getUnconfirmedGrades,
+    getUnconfirmedGrades: serialized(getUnconfirmedGrades),
+    clearAccount: (mandator, username) => runAccount(normalizeMandatorName(mandator), username, () => clearAccount(mandator, username)),
     // for testing 
     getCookiesFromHeaders,
     toCookieHeaderString,

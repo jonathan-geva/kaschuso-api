@@ -1,4 +1,4 @@
-const { authenticate, getAuthenticationFailureInfo } = require('../../services/kaschuso-api');
+const { authenticate, getAuthenticationFailureInfo, normalizeMandatorName } = require('../../services/kaschuso-api');
 const { authRateLimit } = require('./middleware/rate-limit');
 const { createAuthSession } = require('./middleware/auth');
 const { validateAuthBody } = require('./middleware/validation');
@@ -7,7 +7,7 @@ var router = require('express').Router();
 
 // whether the user is authenticated
 router.post('/', authRateLimit, validateAuthBody, function(req, res) {
-    const mandator = req.body.mandator;
+    const mandator = normalizeMandatorName(req.body.mandator);
     const username = req.body.username;
     const password = req.body.password;
 

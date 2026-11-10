@@ -5,7 +5,12 @@ import { errors } from 'oidc-provider';
 const CONNECTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export class Store {
-  constructor(pool, vault) { this.pool = pool; this.vault = vault; }
+  constructor(pool, vault, { onOrphan = async () => {} } = {}) { this.pool = pool; this.vault = vault; this.onOrphan = onOrphan; }
+
+  async verify() {
+    const { rows } = await this.pool.query("SELECT value FROM mcp_meta WHERE id='vault-check'");
+    if (!rows[0] || this.vault.open(rows[0].value, 'vault-check') !== this.vault.lookup('vault-check')) throw new Error('MCP database migration or storage keys are invalid');
+  }
 
   async transaction(fn) {
     const client = await this.pool.connect();
@@ -108,16 +113,19 @@ export class Store {
   }
 
   async revokeConnection(grantId, accountId) {
-    return this.transaction(async db => {
+    let orphan;
+    const result = await this.transaction(async db => {
       const args = [grantId];
       if (accountId) args.push(accountId);
       const locked = await db.query(`SELECT account_id FROM mcp_connections WHERE grant_id=$1${accountId ? ' AND account_id=$2' : ''} FOR UPDATE`, args);
       if (accountId && !locked.rowCount) return false;
       await db.query("DELETE FROM mcp_oauth_models WHERE grant_id=$1 OR (model='Grant' AND key_hash=$2)", [grantId, this.vault.lookup(`Grant:${grantId}`)]);
       await db.query('DELETE FROM mcp_connections WHERE grant_id=$1', [grantId]);
-      if (locked.rows[0]) await db.query(`DELETE FROM mcp_accounts a WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM mcp_connections c WHERE c.account_id=a.id AND c.revoked_at IS NULL AND c.expires_at>now())`, [locked.rows[0].account_id]);
+      if (locked.rows[0]) orphan = (await db.query(`DELETE FROM mcp_accounts a WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM mcp_connections c WHERE c.account_id=a.id AND c.revoked_at IS NULL AND c.expires_at>now()) RETURNING id,credentials`, [locked.rows[0].account_id])).rows[0];
       return true;
     });
+    if (orphan) await this.onOrphan(this.vault.open(orphan.credentials, `account:${orphan.id}`));
+    return result;
   }
 
   async revokeOwned(grantId, credentials) {
@@ -146,11 +154,12 @@ export class Store {
   }
 
   async cleanup() {
-    await this.transaction(async db => {
+    const orphans = await this.transaction(async db => {
       await db.query('DELETE FROM mcp_decisions WHERE expires_at<=now()');
       await db.query('DELETE FROM mcp_oauth_models WHERE expires_at<=now()');
       await db.query('DELETE FROM mcp_connections WHERE expires_at<=now() OR revoked_at IS NOT NULL');
-      await db.query(`DELETE FROM mcp_accounts a WHERE updated_at<now()-interval '5 minutes' AND NOT EXISTS(SELECT 1 FROM mcp_connections c WHERE c.account_id=a.id)`);
+      return (await db.query(`DELETE FROM mcp_accounts a WHERE updated_at<now()-interval '5 minutes' AND NOT EXISTS(SELECT 1 FROM mcp_connections c WHERE c.account_id=a.id) RETURNING id,credentials`)).rows;
     });
+    for (const row of orphans) await this.onOrphan(this.vault.open(row.credentials, `account:${row.id}`));
   }
 }
