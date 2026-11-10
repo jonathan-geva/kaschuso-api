@@ -113,7 +113,7 @@ export class Store {
       if (accountId) args.push(accountId);
       const locked = await db.query(`SELECT account_id FROM mcp_connections WHERE grant_id=$1${accountId ? ' AND account_id=$2' : ''} FOR UPDATE`, args);
       if (accountId && !locked.rowCount) return false;
-      await db.query('DELETE FROM mcp_oauth_models WHERE grant_id=$1', [grantId]);
+      await db.query("DELETE FROM mcp_oauth_models WHERE grant_id=$1 OR (model='Grant' AND key_hash=$2)", [grantId, this.vault.lookup(`Grant:${grantId}`)]);
       await db.query('DELETE FROM mcp_connections WHERE grant_id=$1', [grantId]);
       if (locked.rows[0]) await db.query(`DELETE FROM mcp_accounts a WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM mcp_connections c WHERE c.account_id=a.id AND c.revoked_at IS NULL AND c.expires_at>now())`, [locked.rows[0].account_id]);
       return true;
