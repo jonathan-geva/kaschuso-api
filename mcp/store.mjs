@@ -100,6 +100,11 @@ export class Store {
     await this.pool.query('INSERT INTO mcp_connections(grant_id,account_id,client_id,expires_at) VALUES($1,$2,$3,$4)', [grantId, accountId, clientId, new Date(Date.now() + CONNECTION_MS)]);
   }
 
+  async completeAuthorization(grantId) {
+    const result = await this.pool.query('UPDATE mcp_connections SET authorization_completed=true WHERE grant_id=$1 AND revoked_at IS NULL AND expires_at>now()', [grantId]);
+    if (!result.rowCount) throw new Error('Connection is no longer available');
+  }
+
   async activeConnection(grantId) {
     const { rows } = await this.pool.query(`SELECT c.*,a.credentials,a.reconnect FROM mcp_connections c JOIN mcp_accounts a ON a.id=c.account_id WHERE c.grant_id=$1 AND c.revoked_at IS NULL AND c.expires_at>now()`, [grantId]);
     const row = rows[0];
@@ -157,7 +162,7 @@ export class Store {
     const orphans = await this.transaction(async db => {
       await db.query('DELETE FROM mcp_decisions WHERE expires_at<=now()');
       await db.query('DELETE FROM mcp_oauth_models WHERE expires_at<=now()');
-      await db.query('DELETE FROM mcp_connections WHERE expires_at<=now() OR revoked_at IS NOT NULL');
+      await db.query("DELETE FROM mcp_connections WHERE expires_at<=now() OR revoked_at IS NOT NULL OR (authorization_completed=false AND created_at<now()-interval '5 minutes')");
       return (await db.query(`DELETE FROM mcp_accounts a WHERE updated_at<now()-interval '5 minutes' AND NOT EXISTS(SELECT 1 FROM mcp_connections c WHERE c.account_id=a.id) RETURNING id,credentials`)).rows;
     });
     for (const row of orphans) await this.onOrphan(this.vault.open(row.credentials, `account:${row.id}`));

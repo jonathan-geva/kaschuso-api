@@ -48,8 +48,12 @@ export async function createOAuth({ config, store, requireDashboard, onDisconnec
       rpInitiatedLogout: { enabled: false }, pushedAuthorizationRequests: { enabled: false },
       resourceIndicators: {
         enabled: true, defaultResource: () => config.resource, useGrantedResource: () => true,
-        getResourceServerInfo(_ctx, resource) {
+        getResourceServerInfo(ctx, resource) {
           if (resource !== config.resource) throw new errors.InvalidTarget();
+          if (['authorization', 'resume'].includes(ctx.oidc.route)) {
+            if (ctx.oidc.params.scope !== 'grades:read') throw new errors.InvalidScope('Only grades:read is supported');
+            if (ctx.oidc.params.response_mode && ctx.oidc.params.response_mode !== 'query') throw new errors.InvalidRequest('Only query responses are supported');
+          }
           return { scope: 'grades:read', audience: config.resource, accessTokenTTL: 600, accessTokenFormat: 'opaque' };
         },
       },
@@ -67,6 +71,34 @@ export async function createOAuth({ config, store, requireDashboard, onDisconnec
     renderError: async ctx => { ctx.status = 400; ctx.type = 'html'; ctx.body = '<!doctype html><html lang="en"><meta charset="utf-8"><title>Connection unavailable</title><p>This connection could not be completed. Start a new connection from ChatGPT.</p></html>'; },
   });
   provider.proxy = true;
+  const outcomes = new WeakMap();
+  provider.on('authorization.success', (ctx, result) => outcomes.set(ctx, Boolean(result.code)));
+  provider.on('authorization.error', ctx => outcomes.set(ctx, false));
+  provider.on('error', () => console.error('MCP authorization temporarily unavailable'));
+  // This middleware completes before Koa writes the redirect. Failed resumptions
+  // revoke the newly created grant; an interrupted database write has a short reaper backstop.
+  provider.use(async (ctx, next) => {
+    try {
+      await next();
+      if (ctx.oidc?.route === 'discovery' && ctx.body && typeof ctx.body === 'object') {
+        ctx.body.response_modes_supported = ['query'];
+        ctx.body.scopes_supported = ['grades:read'];
+      }
+    }
+    finally {
+      const grantId = ctx.oidc?.result?.consent?.grantId;
+      if (ctx.oidc?.route === 'resume' && grantId) {
+        try {
+          if (outcomes.get(ctx)) await store.completeAuthorization(grantId);
+          else await store.revokeConnection(grantId);
+        } catch {
+          ctx.remove('Location');
+          ctx.status = 503;
+          ctx.body = { error: 'temporarily_unavailable' };
+        }
+      }
+    }
+  });
 
   const router = express.Router();
   router.use(cookieParser());
@@ -81,7 +113,7 @@ export async function createOAuth({ config, store, requireDashboard, onDisconnec
     }
     next();
   });
-  const metadata = { issuer: config.issuer, authorization_endpoint: `${config.issuer}/auth`, token_endpoint: `${config.issuer}/token`, registration_endpoint: `${config.issuer}/reg`, revocation_endpoint: `${config.issuer}/token/revocation`, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'], scopes_supported: ['grades:read'], authorization_response_iss_parameter_supported: true };
+  const metadata = { issuer: config.issuer, authorization_endpoint: `${config.issuer}/auth`, token_endpoint: `${config.issuer}/token`, registration_endpoint: `${config.issuer}/reg`, revocation_endpoint: `${config.issuer}/token/revocation`, response_types_supported: ['code'], response_modes_supported: ['query'], grant_types_supported: ['authorization_code', 'refresh_token'], code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'], scopes_supported: ['grades:read'], authorization_response_iss_parameter_supported: true };
   router.get(['/.well-known/oauth-authorization-server', '/.well-known/oauth-authorization-server/oauth'], (_req, res) => res.json(metadata));
   router.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'], (_req, res) => res.json({ resource: config.resource, authorization_servers: [config.issuer], scopes_supported: ['grades:read'] }));
 
@@ -161,13 +193,20 @@ export async function createOAuth({ config, store, requireDashboard, onDisconnec
     res.clearCookie('mcp_completion', clearOptions);
     if (!decision) return res.status(400).json({ error: 'INVALID_COMPLETION' });
     if (decision.denied) return provider.interactionFinished(req, res, { error: 'access_denied' }, { mergeWithLastSubmission: false });
+    if (interaction.params.scope !== 'grades:read') return res.status(400).json({ error: 'INVALID_SCOPE' });
     const accountId = await store.saveAccount(decision.credentials);
-    const grant = new provider.Grant({ accountId, clientId: interaction.params.client_id });
-    grant.addOIDCScope('grades:read');
-    grant.addResourceScope(config.resource, 'grades:read');
-    const grantId = await grant.save();
-    await store.saveConnection({ grantId, accountId, clientId: interaction.params.client_id });
-    return provider.interactionFinished(req, res, { login: { accountId, remember: false }, consent: { grantId } }, { mergeWithLastSubmission: false });
+    let grantId;
+    try {
+      const grant = new provider.Grant({ accountId, clientId: interaction.params.client_id });
+      grant.addOIDCScope('grades:read');
+      grant.addResourceScope(config.resource, 'grades:read');
+      grantId = await grant.save();
+      await store.saveConnection({ grantId, accountId, clientId: interaction.params.client_id });
+      return await provider.interactionFinished(req, res, { login: { accountId, remember: false }, consent: { grantId } }, { mergeWithLastSubmission: false });
+    } catch (error) {
+      if (grantId) await store.revokeConnection(grantId);
+      throw error;
+    }
   }));
 
   router.post('/oauth/reg', boundedLimit(20, 60000), parseJSON, (req, res, next) => {

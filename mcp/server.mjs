@@ -30,7 +30,8 @@ export function mountMcp(app, { config, oauth, store, school }) {
       } catch (error) {
         const reason = school.getAuthenticationFailureInfo?.(error)?.reason;
         if (reason === 'INVALID_CREDENTIALS') {
-          await store.markReconnect(identity.accountId);
+          try { await store.markReconnect(identity.accountId); }
+          catch { return failure('TEMPORARILY_UNAVAILABLE', 'Grade data is temporarily unavailable. Please try again.'); }
           return failure('RECONNECT_REQUIRED', 'School sign-in needs updating. Reconnect through the dashboard.');
         }
         return failure('TEMPORARILY_UNAVAILABLE', 'Grade data is temporarily unavailable. Please try again.');

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS mcp_connections (
   expires_at timestamptz NOT NULL, revoked_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS mcp_connections_account_idx ON mcp_connections(account_id);
+ALTER TABLE mcp_connections ADD COLUMN IF NOT EXISTS authorization_completed boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS mcp_decisions (
   interaction_hash text PRIMARY KEY, proof_hash text UNIQUE NOT NULL, payload text NOT NULL,
   expires_at timestamptz NOT NULL

@@ -21,6 +21,7 @@ test('school consent and PKCE produce an account-bound access token and rotating
   assert.ok(result.tokens.refresh_token);
   assert.equal(result.tokens.expires_in, 600);
   const identity = await h.oauth.authenticateMcp(result.tokens.access_token);
+  assert.equal((await h.pool.query('SELECT authorization_completed FROM mcp_connections WHERE grant_id=$1', [identity.grantId])).rows[0].authorization_completed, true);
   assert.equal(identity.credentials.username, 'SYNTHETIC_STUDENT_A');
   assert.equal(result.callback.searchParams.get('state'), 'synthetic-state');
   assert.equal(result.callback.searchParams.get('iss'), h.config.issuer);
@@ -114,4 +115,31 @@ test('expired interaction and mismatched proxy host cannot continue consent', as
   assert.equal((await approve(h, flow)).response.status, 410);
   const forged = await fetch(`${h.base}/.well-known/oauth-authorization-server`, { headers: { 'X-Forwarded-Host': 'other.example' } });
   assert.equal(forged.status, 400);
+});
+
+test('missing, unsupported and mixed identity scopes are rejected before consent or persistence', async () => {
+  const { client } = await register(h);
+  const before = await h.pool.query('SELECT count(*) FROM mcp_accounts');
+  for (const scope of ['', 'unsupported', 'openid grades:read']) {
+    const flow = await begin(h, client, browser(h.base), { scope });
+    assert.equal(flow.uid, undefined, 'Invalid scopes must not reach the school consent page');
+    assert.ok(new URL(flow.location || flow.response.headers.get('location')).searchParams.get('error'));
+  }
+  const unsupportedMode = await begin(h, client, browser(h.base), { response_mode: 'form_post' });
+  assert.equal(unsupportedMode.uid, undefined);
+  assert.equal((await h.pool.query('SELECT count(*) FROM mcp_accounts')).rows[0].count, before.rows[0].count);
+});
+
+test('failed interaction completion removes the newly retained account and connection', async () => {
+  const { client } = await register(h);
+  const flow = await begin(h, client);
+  const credentials = { mandator: 'school-a', username: 'SYNTHETIC_FAILED_CONNECTION' };
+  const { body } = await approve(h, flow, h.dashboard(credentials.mandator, credentials.username));
+  const original = h.oauth.provider.interactionFinished;
+  try {
+    h.oauth.provider.interactionFinished = async () => { throw new Error('Synthetic completion failure'); };
+    assert.equal((await finish(h, flow, body.proof)).status, 503);
+  } finally { h.oauth.provider.interactionFinished = original; }
+  assert.equal((await h.store.listConnections(credentials)).length, 0);
+  assert.equal((await h.pool.query('SELECT 1 FROM mcp_accounts WHERE locator=$1', [h.store.locator(credentials)])).rowCount, 0);
 });

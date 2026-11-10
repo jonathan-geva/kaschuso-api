@@ -72,3 +72,13 @@ test('a restarted store refuses a mismatched encryption key', async () => {
   const wrong = new Store(pool, createVault(randomBytes(32).toString('base64'), randomBytes(32).toString('base64')));
   await assert.rejects(wrong.migrate());
 });
+
+test('abandoned authorization connections and credentials are cleaned after the interaction window', async () => {
+  const id = await store.saveAccount({ mandator: 'school-a', username: 'SYNTHETIC_ABANDONED', password: 'SYNTHETIC_PASSWORD' });
+  await store.saveConnection({ grantId: 'synthetic-abandoned-grant', accountId: id, clientId: 'synthetic-client' });
+  await pool.query("UPDATE mcp_accounts SET updated_at=now()-interval '6 minutes' WHERE id=$1", [id]);
+  await pool.query("UPDATE mcp_connections SET created_at=now()-interval '6 minutes' WHERE account_id=$1", [id]);
+  await store.cleanup();
+  assert.equal(await store.activeConnection('synthetic-abandoned-grant'), undefined);
+  assert.equal((await pool.query('SELECT 1 FROM mcp_accounts WHERE id=$1', [id])).rowCount, 0);
+});

@@ -6,10 +6,12 @@ import { mountMcp } from '../server.mjs';
 let h;
 let handler;
 const calls = [];
+let rejectedSchoolLogin = false;
 before(async () => {
   h = await harness();
   handler = mountMcp(h.app, { config: h.config, oauth: h.oauth, store: h.store, school: {
-    async getGrades(mandator, username) { calls.push({ mandator, username }); return [{ name: username.endsWith('_A') ? 'Mathematics' : 'Biology', class: 'SYNTHETIC_COURSE', average: '5', grades: [{ date: '01.01.2000', name: 'Synthetic assessment', value: '5', weighting: '1' }] }]; },
+    async getGrades(mandator, username) { if (rejectedSchoolLogin) throw new Error('Synthetic rejected school login'); calls.push({ mandator, username }); return [{ name: username.endsWith('_A') ? 'Mathematics' : 'Biology', class: 'SYNTHETIC_COURSE', average: '5', grades: [{ date: '01.01.2000', name: 'Synthetic assessment', value: '5', weighting: '1' }] }]; },
+    getAuthenticationFailureInfo() { return { reason: 'INVALID_CREDENTIALS' }; },
     async getUnconfirmedGrades() { return []; },
   } });
 });
@@ -56,4 +58,16 @@ test('database failure does not fall back to cached authorization', async () => 
     assert.equal((await rpc(tokens.access_token, 'tools/list')).response.status, 503);
     assert.equal(calls.length, count);
   } finally { h.pool.query = original; }
+});
+
+test('reconnect bookkeeping failures never expose database diagnostics through tool errors', async () => {
+  const { tokens } = await connect(h);
+  const original = h.store.markReconnect;
+  try {
+    rejectedSchoolLogin = true;
+    h.store.markReconnect = async () => { throw new Error('SYNTHETIC_PRIVATE_DATABASE_ID'); };
+    const result = await rpc(tokens.access_token, 'tools/call', { name: 'get_grade_overview', arguments: {} });
+    assert.equal(JSON.stringify(result.body).includes('SYNTHETIC_PRIVATE_DATABASE_ID'), false);
+    assert.equal(result.body.result.isError, true);
+  } finally { rejectedSchoolLogin = false; h.store.markReconnect = original; }
 });

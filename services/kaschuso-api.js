@@ -271,11 +271,8 @@ async function authenticateViaSalPortal(mandator, username, password) {
         const curlCookies = authenticateViaSalPortalWithCurl(username, password);
         storeCookies(mandator, username, curlCookies);
         return curlCookies;
-    } catch (curlError) {
-        console.warn('SAL curl fallback unavailable or failed, falling back to axios flow', {
-            message: curlError && curlError.message,
-            code: curlError && curlError.code
-        });
+    } catch (_curlError) {
+        console.warn('SAL curl authentication unavailable; using alternate transport');
     }
 
     const baseUrl = getBaseUrlForMandator(mandator);
@@ -1509,7 +1506,7 @@ async function getMandators() {
             return mergeMandatorLists(robotsMandators, getEnabledKnownMandators());
         }
     } catch (error) {
-        console.warn('Could not load mandators from robots.txt', error.message);
+        console.warn('Public school discovery unavailable');
     }
 
     try {
@@ -1524,7 +1521,7 @@ async function getMandators() {
 
         return mergeMandatorLists(discoveredMandators, getEnabledKnownMandators());
     } catch (error) {
-        console.warn('Falling back to curated mandator list', error.message);
+        console.warn('Using curated school list');
         return mergeMandatorLists(getEnabledKnownMandators());
     }
 }
@@ -1942,11 +1939,7 @@ async function launchSalWebtopResource(mandator, cookies) {
             launchUrl = toSalPortalAccessUrl(mandator, toAbsoluteUrl(baseUrl, applicationUri)) || launchUrl;
         } catch (error) {
             // In some environments this endpoint resets the connection. Keep progressing with base launch URL.
-            console.warn('SAL resource_info request failed, using direct launch fallback', {
-                mandator,
-                message: error && error.message,
-                code: error && error.code
-            });
+            console.warn('SAL resource lookup unavailable; using alternate launch');
         }
     } else if (SAL_DEBUG) {
         console.warn('SAL debug: skipping resource_info_v2 lookup and using direct launch URL', {
@@ -2307,18 +2300,12 @@ function buildAuthenticationDiagnostics(loginRes) {
     const errorText = page ? page('.sls-global-errors-msg, [class*="error"], .alert').text().trim() : '';
 
     return {
-        status: loginRes && (loginRes.status || (loginRes.error && loginRes.error.response && loginRes.error.response.status)) || null,
+        status: Number.isInteger(loginRes && loginRes.status) ? loginRes.status : null,
         hasLocationHeader: Boolean(loginRes && loginRes.locationValue),
-        locationValue: loginRes && loginRes.locationValue ? loginRes.locationValue : null,
-        cookieNames: Object.keys((loginRes && loginRes.cookies) || {}),
-        responseTitle: page ? page('title').text().trim() || null : null,
+        hasSessionCookie: hasAuthenticatedSessionCookie(loginRes && loginRes.cookies),
         hasLoginForm: Boolean(page && page('form').length),
         hasPasswordField: Boolean(page && page('input[type=password], input[name=password]').length),
-        hasCredentialError: Boolean(errorText),
-        credentialErrorText: errorText || null,
-        bodyPreview: responseBody
-            ? responseBody.replace(/\s+/g, ' ').trim().slice(0, 160)
-            : null
+        hasCredentialError: Boolean(errorText)
     };
 }
 
