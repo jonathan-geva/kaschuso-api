@@ -21,6 +21,11 @@ await new Promise(resolve => callback.listen(3003, '127.0.0.1', resolve));
 const school = {
   async getGrades() { return [{ class: 'SYNTHETIC_COURSE', name: 'Mathematics', average: '5', grades: [{ date: '01.01.2000', name: 'Synthetic assessment', value: '5', weighting: '1' }] }]; },
   async getUnconfirmedGrades() { return []; },
+  async getGradeHistory() {
+    const subject = (name, average) => ({ name, average: String(average), grades: [{ date: '01.01.2000', name: 'Synthetic assessment', value: String(average), weighting: '1' }] });
+    const semesters = Array.from({ length: 5 }, (_, index) => ({ id: String(38 + index), label: `${index % 2 + 1}. ${24 + Math.floor(index / 2)}/${25 + Math.floor(index / 2)}`, isCurrent: index === 4, subjects: [subject('Deutsch', 4.5), subject('M' + (100 + index), 5), ...(index >= 2 ? [subject('Physik', 4)] : []), ...(index >= 4 ? [subject('Chemie', 5), subject('Interdisziplinäres Arbeiten in den Fächern 1.1', 4.5), subject('Interdisziplinäres Arbeiten in den Fächern 1.2', 5)] : [])] }));
+    return { semesters, availableSemesters: semesters.map(({ subjects, ...term }) => term), selectedSemester: { id: '42', label: '1. 26/27' }, complete: true, issues: [], retrievedAt: '2026-11-10T12:00:00Z' };
+  },
 };
 const handler = mountMcp(h.app, { config: h.config, oauth: h.oauth, store: h.store, school });
 h.app.use(cors({ origin: h.config.frontendUrl }));
@@ -33,6 +38,8 @@ h.app.post('/api/authenticate', express.json(), (req, res) => {
   res.json({ authenticated: true, mandator: 'school-a', username: req.body.username, ...createAuthSession('school-a', req.body.username, req.body.password) });
 });
 h.app.get('/api/grades', async (_req, res) => res.json({ subjects: await school.getGrades() }));
+h.app.get('/api/grade-history', async (_req, res) => res.json(await school.getGradeHistory()));
+h.app.use('/api/qualification', express.json({ limit: '8kb' }), require('../../routes/api/qualification').createQualificationRouter({ school }));
 h.app.get('/api/unconfirmed-grades', (_req, res) => res.json({ grades: [] }));
 h.app.get('/api/absences', (_req, res) => res.json({ absences: [], tardiness: [], incidents: [], openReports: [] }));
 h.app.get('/api/user/info', (_req, res) => res.json({ name: 'SYNTHETIC_STUDENT', class: 'SYNTHETIC_GROUP' }));

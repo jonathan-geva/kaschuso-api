@@ -2,6 +2,19 @@
 
 API wrapper for SchulNetz portals (KASCHUSO + SAL).
 
+## Semester history and qualification planning
+
+The authenticated API now includes `GET /api/grade-history`, `GET /api/qualification` and `POST /api/qualification`. Historical reads restore the original upstream semester; scenario inputs never overwrite school records. BM and BFS semester averages are separate. The first source-cited planner profile covers GIBS Solothurn Informatiker/in EFZ Applikationsentwicklung BiVo2021 with eight-semester, pre-2026 BM1 TALS. Running averages and target scenarios remain provisional; unavailable grades stay empty.
+
+- [Calculation design and API contracts](docs/qualification-design.md)
+- [BM rules, timetable, rounding and cohort research](docs/qualification-research-bm.md)
+- [EFZ/module/üK research and source conflicts](docs/qualification-research-bfs.md)
+- [Profile contributions and verification](docs/qualification-contributing.md)
+- [ChatGPT, Claude and other MCP client setup](docs/chatbot-setup.md)
+- [OAuth/MCP deployment, privacy and revocation](docs/chatgpt-mcp.md)
+
+The chatbot setup Markdown is served at `/chatbot-setup.md`. Connected clients receive common interpretation instructions during MCP initialization; refresh a connection after tool updates. Client support depends on remote MCP and OAuth capabilities, not the model name alone.
+
 This service exposes a small HTTP API to authenticate against upstream portals and fetch:
 
 - user info
@@ -43,7 +56,7 @@ This project is an Express server (`app.js`) with route handlers in `routes/api/
 
 ## Requirements
 
-- Node.js 20+ (project Dockerfile uses Node 20-alpine)
+- Node.js 24 (including the MCP integration)
 - npm or yarn
 - Internet access to `https://kaschuso.so.ch/`
 - Optional SAL access to `https://portal.sbl.ch/` when enabled

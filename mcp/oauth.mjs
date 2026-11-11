@@ -7,13 +7,17 @@ const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch
 const uidSchema = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/);
 const proofSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const callback = z.string().max(2048).refine(value => {
-  try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.hash; } catch { return false; }
+  try {
+    const u = new URL(value);
+    const loopback = u.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(u.hostname);
+    return (u.protocol === 'https:' || loopback) && !u.username && !u.password && !u.hash;
+  } catch { return false; }
 });
 const registration = z.object({
   client_name: z.string().min(1).max(100).regex(/^[^\p{Cc}\p{Cf}]*$/u).optional(),
   client_uri: callback.optional(),
   redirect_uris: z.array(callback).min(1).max(5),
-  application_type: z.literal('web').default('web'),
+  application_type: z.enum(['web', 'native']).default('web'),
   response_types: z.array(z.literal('code')).length(1).default(['code']),
   grant_types: z.array(z.enum(['authorization_code', 'refresh_token'])).min(1).max(2).refine(x => x.includes('authorization_code')).default(['authorization_code', 'refresh_token']),
   token_endpoint_auth_method: z.enum(['none', 'client_secret_post', 'client_secret_basic']).default('none'),

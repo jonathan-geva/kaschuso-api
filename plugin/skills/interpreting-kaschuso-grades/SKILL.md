@@ -1,11 +1,13 @@
 ---
 name: interpreting-kaschuso-grades
-description: Use when a student asks about Kaschuso grades, subject averages, exam results, unconfirmed grades, or the next grade needed for a target average.
+description: Use when a student asks about Kaschuso grades, older semesters, BM or BFS averages, Berufsmaturität, EFZ qualification, IDAF, üK, exam results, or dream-grade planning.
 ---
 
 # Interpreting Kaschuso grades
 
-Use current data from the student's authenticated Kaschuso MCP connection. Read the available tool schemas before calling them. If the connection is unavailable, ask the student to connect or reconnect through the dashboard; never ask for school passwords or access tokens in chat.
+Use the student's authenticated read-only MCP tools and their schemas. A private connection need not appear in public plugin search. If tools are missing, explain the missing connection and use the client's custom MCP/OAuth setup; a dashboard visit alone cannot connect a chatbot. Never request passwords or tokens in chat.
+
+Swiss marks run from 1 to 6: 6 is best, 4 sufficient. Missing marks and zero placeholders are unknown. Keep assessments, running portal averages, official certificate marks, module marks and qualification results distinct.
 
 | Student's question | Tool |
 | --- | --- |
@@ -13,6 +15,17 @@ Use current data from the student's authenticated Kaschuso MCP connection. Read 
 | Exam details, points, weights, class comparison | `get_subject_grades` |
 | Grades awaiting confirmation | `get_unconfirmed_grades` |
 | Next grade for an exact target | `calculate_grade_projection` |
+| Previous semesters | `get_grade_history` |
+| BM/BFS semester averages, BM/EFZ qualification | `get_qualification_overview` |
+| Dream semester/exam targets, üK/IPA scenarios | `calculate_qualification_scenario` |
+
+For BM/BFS/EFZ or qualification planning, **start with `get_qualification_overview`**, not a hand-built average of overview data. Use its profile, source links, stages and incompleteness. The first profile covers GIBS Solothurn Informatiker EFZ Applikationsentwicklung BiVo2021 and pre-2026 eight-semester BM1 TALS. Confirm a mistaken inferred start year; do not extend its rules to other programmes or newer BM cohorts.
+
+BM and BFS descriptive semester averages stay separate. IDAF/IDPA belong to BM interdisciplinary work, not the vocational ICT/üK average. IDAF raw performances must be grouped into semester marks. NW semester averaging differs from its Physics:Chemistry 2:1 exam weighting. Distinct ICT modules count once; conflicting attempts need confirmation. Use canonical calculations rather than guessing these rules.
+
+The local cited GIBS EFZ BM model uses IPA50% and ICT experience50%; ICT combines rounded BFS module mean80% and rounded üK mean20%. Other public school sources conflict about EFZ weighting: retain the server's warning and seek school confirmation, rather than declaring a nationally settled formula.
+
+For targets, collect the desired subject/final target and explicit missing components, then call the scenario tool. Report whether the requirement is a remaining-semester average (`targetBasis`), a final exam, or one weighted assessment. Explain equal-future-mark assumptions and impossible values. Scenarios never overwrite observed marks. A provisional portal average is not an official certificate mark; incomplete/estimated data cannot award a diploma.
 
 Start with the overview when a subject reference is unknown. Use the returned opaque reference, ask which subject when choices are ambiguous, and follow pagination for a complete exam list. The tools determine the student's identity from authorization; never request or supply another student's identity.
 
