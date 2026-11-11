@@ -1,0 +1,14 @@
+# Qualification planner verification
+
+Verified 2026-11-11 against the coordinated backend/frontend qualification branches.
+
+- Backend Jest: 108 tests passed across five suites. Coverage includes trusted historical navigation, restored semester selection, cache timestamps/isolation, authentication classification, strict REST scenarios and the pure calculation engine.
+- MCP/security: 43 tests passed. Seven read-only tools are discoverable; initialization includes interpretation instructions. Tests cover OAuth account binding, strict scenario inputs, in-flight revocation, reconnect after rejected school credentials, history fetch timestamps, trusted client origins and exact native loopback callbacks.
+- Frontend: ESLint and TypeScript/Vite build passed. Eleven Playwright tests passed, including real REST/engine integration with invented records, target edits, IDAF grouping, missing grades, tab preservation, refresh, logout reset and mobile overflow. Existing nonblocking Zod annotation and bundle-size build warnings remain.
+- Skill behaviour: a fresh baseline using the earlier skill routed a qualification question to the current-grade overview and lacked the qualification rules. A fresh check of the updated skill selected the qualification overview and kept BM/BFS/IDAF distinctions, target assumptions, provisional results and source conflicts explicit.
+- A separately authorised private school check verified historical periods, canonical planner construction and restoration of the original grade view. No school records, private worksheet, credentials or navigation captures are included here. The live connection priority is ChatGPT web; other documented clients have protocol/fixture coverage rather than claimed live account tests.
+- Repository privacy-pattern checks passed. An additional exact-value scan of both source trees found no provided test credentials or private capture references. Browser review images use synthetic fixtures only.
+
+The independent code review found no unresolved Critical or Important issue after fixes. Regression tests cover missing scheduled promotion subjects, context-dependent validation returning400, sanitized reconnect classification, active-scenario refresh, tab switching and grouped IDAF input preservation. Additional fixes preserve cached retrieval timestamps and distinguish impossible grades above6 from a subject with no remaining semester slots.
+
+No database migration or new paid resource is needed. The stable OAuth/storage keys and existing hosting plans remain unchanged. Merge/deploy the backend before the frontend; refresh existing MCP connections afterward. The supported profile and its source-specific assumptions remain as documented in `qualification-design.md` and the research notes; a provisional forecast is not an official qualification result.

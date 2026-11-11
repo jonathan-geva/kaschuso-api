@@ -57,12 +57,20 @@ Do not replace encryption, lookup or cookie keys silently. For this first releas
 
 ## Tools and interpretation
 
+The qualification extension adds historical semesters and the [source-cited planner](qualification-design.md). BM/BFS descriptive semester means, BM final qualification and the local EFZ module/üK/IPA model remain distinct. See [BM research](qualification-research-bm.md) and [vocational research](qualification-research-bfs.md) for cohort boundaries, exact rounding stages and the documented EFZ source conflict. The private, filled-in worksheet is not part of this repository.
+
+- `get_grade_history`: up to eight authorised historical school semesters, excluding future catalogue options.
+- `get_qualification_overview`: separate BM/BFS averages, nine BM subject rows, source provenance and missing qualification inputs.
+- `calculate_qualification_scenario`: explicit dream targets, semester/exam hypotheses, grouped IDAF, üK and IPA inputs; no school records are changed.
+
+Common MCP initialization instructions teach the supported scale, qualification model and limits to connected clients. The portable skill provides additional workflow guidance. [Client setup instructions](chatbot-setup.md) are also served publicly at `/chatbot-setup.md`; installation of a skill alone is not a server connection. ChatGPT web is the live-tested priority. Other documented clients have fixture/protocol coverage, not a claimed live account test.
+
 - `get_grade_overview`: current subject averages and assessment counts with opaque references.
 - `get_subject_grades`: paginated exam names, source dates/grades/points/weights, and separately supplied class averages.
 - `get_unconfirmed_grades`: the distinct awaiting-confirmation feed; exam dates do not establish upload order.
 - `calculate_grade_projection`: exact-target estimate from visible numeric grades and supported weights. Missing weights, unknown rounding rules and school promotion/compensation rules are never inferred.
 
-The optional portable plugin source contains the interpretation skill and neutral project attribution. Add a portable `mcp.json` only after verifying the deployed endpoint and its OAuth connection; never package private credentials or an unverified placeholder connection. Installation alone does not verify account linking or live grade retrieval.
+The optional portable plugin source contains the interpretation skill, neutral project attribution, and `mcp.json` for the verified deployed OAuth endpoint. The connection declares automatic client registration and only `grades:read`; it packages no private credentials. Clients still need their normal server-connection and student-consent flow. Installation alone does not verify account linking or live grade retrieval.
 
 ## Local verification
 

@@ -22,6 +22,10 @@ async function createApp() {
         next();
     });
     app.get(['/health', '/api/health'], (_req, res) => res.json({ status: 'ok' }));
+    app.get('/chatbot-setup.md', (_req, res) => {
+        res.set({ 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'Access-Control-Allow-Origin': '*' });
+        res.sendFile(require('path').join(__dirname, 'docs/chatbot-setup.md'));
+    });
     // OAuth and MCP own their parsers, authentication, CORS and rate limits.
     // They must not share the dashboard's global egress-IP budget.
     const { mountIntegration } = await import('./mcp/index.mjs');

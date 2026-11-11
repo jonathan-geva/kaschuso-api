@@ -8,6 +8,7 @@ const axios = require('axios').default;
 axios.defaults.withCredentials = true;
 axios.defaults.timeout = 20000;
 const { runAccount } = require('./account-queue');
+const { createGradeHistoryService, trustedUrl } = require('./grade-history');
 
 const qs = require('qs');
 const cheerio = require('cheerio');
@@ -730,6 +731,7 @@ async function getUserInfoFromHtml(homeHtml, settingsHtml, mandator, username) {
 
 async function getGrades(mandator, username, password) {
     console.log('Getting school grades');
+    await gradeHistory.ensureRestored(mandator, username, password);
     
     const { headers, homeData, cookies } = await getHomepageAndHeaders(mandator, username, password);
     const gradesUrl = findUrlByPageid(mandator, homeData, GRADES_PAGE_ID);
@@ -2201,6 +2203,7 @@ function storeCookies(mandator, username, cookies) {
 
 function clearAccount(mandator, username) {
     cookiesMap.delete(JSON.stringify([normalizeMandatorName(mandator), username]));
+    gradeHistory.clearAccount(mandator, username);
 }
 
 function serialized(operation) {
@@ -2339,6 +2342,43 @@ axios.interceptors.response.use((response) => {
     return Promise.reject(error);
 });
 
+// History requests use the existing authenticated account session but never
+// forward its cookies to portal-supplied origins, mandators or redirects.
+async function openGradeHistorySession(mandator, username, password) {
+    if (isSalMandator(mandator) || new URL(getBaseUrlForMandator(mandator)).origin !== 'https://kaschuso.so.ch') {
+        throw new Error('Grade history is unavailable.');
+    }
+    const home = await getHomepageAndHeaders(mandator, username, password);
+    let cookies = home.cookies;
+    return {
+        homeHtml: home.homeData,
+        async request({ method, url, body }) {
+            const safeUrl = trustedUrl(url, mandator, method === 'POST' ? 'xajax_js.php' : 'index.php');
+            const response = await axios.request({
+                method: method.toLowerCase(),
+                url: safeUrl,
+                data: body,
+                withCredentials: true,
+                maxRedirects: 0,
+                timeout: 15000,
+                headers: Object.assign({}, getCookieHeaders(cookies), method === 'POST'
+                    ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {})
+            });
+            if (response.status !== 200 || typeof response.data !== 'string') throw new Error('Grade history is unavailable.');
+            cookies = mergeCookies(cookies, response.cookies || getCookiesFromHeaders(response.headers || {}));
+            storeCookies(mandator, username, cookies);
+            return response.data;
+        }
+    };
+}
+
+const gradeHistory = createGradeHistoryService({
+    openSession: openGradeHistorySession,
+    parseGrades: getGradesFromHtml,
+    runAccount,
+    normalizeMandator: normalizeMandatorName
+});
+
 module.exports = {
     authenticate: serialized(authenticate),
     getAuthenticationFailureInfo,
@@ -2346,6 +2386,7 @@ module.exports = {
     mergeCookies,
     getUserInfo: serialized(getUserInfo),
     getGrades: serialized(getGrades),
+    getGradeHistory: gradeHistory.getGradeHistory,
     getAbsences: serialized(getAbsences),
     getMandators,
     getPortalMetadata,

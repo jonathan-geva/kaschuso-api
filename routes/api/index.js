@@ -3,6 +3,8 @@ var router = require('express').Router();
 router.use('/authenticate', require('./authenticate'));
 router.use('/user', require('./user'));
 router.use('/grades', require('./grades'));
+router.use('/grade-history', require('./grade-history'));
+router.use('/qualification', require('./qualification').createQualificationRouter());
 router.use('/absences', require('./absences'));
 router.use('/unconfirmed-grades', require('./unconfirmed-grades'));
 router.use('/mandators', require('./mandators'));

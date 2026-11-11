@@ -88,6 +88,12 @@ test('registration rejects unsafe redirect and remote-key metadata', async () =>
   assert.equal((await register(h, { jwks_uri: 'http://127.0.0.1/private' })).response.status, 400);
 });
 
+test('native MCP clients may register exact loopback callbacks while remote HTTP stays forbidden', async () => {
+  assert.equal((await register(h, { application_type: 'native', redirect_uris: ['http://127.0.0.1:45678/callback'] })).response.status, 201);
+  assert.equal((await register(h, { redirect_uris: ['http://localhost:45678/callback'] })).response.status, 400);
+  assert.equal((await register(h, { redirect_uris: ['http://127.0.0.1.attacker.example/callback'] })).response.status, 400);
+});
+
 test('concurrent refresh reuse fails closed for both resulting token families', async () => {
   const { client, tokens } = await connect(h);
   const refresh = () => fetch(`${h.base}/oauth/token`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: client.client_id, refresh_token: tokens.refresh_token, resource: h.config.resource }) });
