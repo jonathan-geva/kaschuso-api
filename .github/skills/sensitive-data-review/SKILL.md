@@ -9,6 +9,8 @@ argument-hint: "Target paths and output mode (quick or thorough)"
 ## Outcome
 Prevent accidental publication of secrets and personal information in a public repository by running a repeatable scan, triaging findings, and verifying safe replacements.
 
+Read [AGENTS.md](../../../AGENTS.md) for the repository's privacy boundaries. Git attribution and necessary public repository/account references are allowed; do not copy a person's name into distributable plugin instructions. Public school regulations/profile names are research, not permission to publish a student's class, marks or identity.
+
 ## When To Use
 - Before commit, push, release, or PR review.
 - After adding fixtures, logs, traces, screenshots, or copied upstream payloads.
@@ -25,27 +27,30 @@ Prevent accidental publication of secrets and personal information in a public r
 - path: specific directory.
 
 2. Run secret-pattern scan.
+- Start with `npm run check:privacy`. It reports locations/categories without printing matching values. This pattern check does not replace manual review for contextual identifiers.
+- Include hidden instruction files. Enumerate the publication scope with `git ls-files --cached --others --exclude-standard`; plain `rg` skips hidden directories. Never scan ignored private captures into chat output.
+- For the manual patterns below, use `rg --hidden --glob '!.git/**' --glob '!node_modules/**' -l` to report filenames first. Inspect likely sensitive matches privately; never paste matching credential, school-record or cookie values into reports.
 - Search for likely credentials and tokens:
 ```bash
-rg -n -i "(api[_-]?key|secret|token|password|passwd|authorization: bearer|x-api-key|private[_-]?key|BEGIN (RSA|EC|OPENSSH) PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|sk_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,})" <scope>
+rg --hidden --glob '!.git/**' --glob '!node_modules/**' -l -i "(api[_-]?key|secret|token|password|passwd|authorization: bearer|x-api-key|private[_-]?key|BEGIN (RSA|EC|OPENSSH) PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|sk_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,})" <scope>
 ```
 
 3. Run personal-data scan.
 - Search for direct identifiers and contact data:
 ```bash
-rg -n -i "([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?[0-9][0-9\-() ]{7,}[0-9]|(first|last)?name\s*[:=]|address\s*[:=]|student[_ -]?id|teacher|guardian|birth(date)?|geburtsdatum|username\s*[:=]|zip(city)?\s*[:=]|postal|plz|heimatort|hometown)" <scope>
+rg --hidden --glob '!.git/**' --glob '!node_modules/**' -l -i "([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?[0-9][0-9\-() ]{7,}[0-9]|(first|last)?name\s*[:=]|address\s*[:=]|student[_ -]?id|teacher|guardian|birth(date)?|geburtsdatum|username\s*[:=]|zip(city)?\s*[:=]|postal|plz|heimatort|hometown)" <scope>
 ```
 
 4. Run school-domain specificity scan.
 - Search for non-generic class/course tokens and institution-specific labels:
 ```bash
-rg -n -i "(class\s+[0-9A-Za-z-]+|course\s+[0-9A-Za-z-]+|mandator|school|portal|resource_list|real user|real student|real teacher)" <scope>
+rg --hidden --glob '!.git/**' --glob '!node_modules/**' -l -i "(class\s+[0-9A-Za-z-]+|course\s+[0-9A-Za-z-]+|mandator|school|portal|resource_list|real user|real student|real teacher)" <scope>
 ```
 
 4b. Run teacher-coded/class-token scan (required for fixtures/tests/docs).
 - Search for school-coded identifiers that can expose class and teacher mappings (examples: `SUBJECT-CODE_A1-TEACHER`, `CLASS-TRACK_TERM-GROUP`, `MODULE-CODE_PROGRAM-OWNER`):
 ```bash
-rg -n "\b[A-Z]{1,6}-[A-Z0-9]+(?:_[A-Z0-9]+)+(?:-[A-Z0-9]+)?\b|\b[A-Z]{1,6}-[A-Z0-9]+-[A-Z0-9]+\b" <scope>
+rg --hidden --glob '!.git/**' --glob '!node_modules/**' -l "\b[A-Z]{1,6}-[A-Z0-9]+(?:_[A-Z0-9]+)+(?:-[A-Z0-9]+)?\b|\b[A-Z]{1,6}-[A-Z0-9]+-[A-Z0-9]+\b" <scope>
 ```
 - Treat hits in fixtures, tests, docs, logs, and examples as sensitive unless clearly synthetic placeholders.
 
@@ -56,6 +61,8 @@ rg -n "\b[A-Z]{1,6}-[A-Z0-9]+(?:_[A-Z0-9]+)+(?:-[A-Z0-9]+)?\b|\b[A-Z]{1,6}-[A-Z0
 - `False positive`: keep and record why.
 
 Personal data includes direct identifiers and quasi-identifiers that can identify a person in context, including date of birth, postal code, city, and hometown.
+
+Review historical semester catalogue IDs/URLs, portal HTML, navigation tokens, class/teacher codes, filled worksheets, grade rows and screenshot metadata as potential identifying data. Use invented school fixtures; live testing is separate, explicitly authorised and private. Remove temporary captures before publication. Check documentation examples and plugin archives as well as source code.
 
 Treat the following as sensitive by default, including in test fixtures: `PLZ/ZIP`, `Geburtsdatum/birth date`, and `Heimatort/hometown`.
 Only keep them when values are fully synthetic placeholders.
@@ -82,6 +89,7 @@ Only keep them when values are fully synthetic placeholders.
 - No teacher-coded or school-specific class tokens remain in fixtures/tests/docs unless they are explicitly synthetic placeholders.
 - Fixtures and docs use generic placeholders.
 - Any accepted false positives are explicitly justified in review notes.
+- Review notes list categories and file locations only, never matching sensitive values. Public regulation/profile labels and literal placeholder/configuration key names can be documented false positives.
 
 ## Quick Mode
 1. Run secret-pattern scan on staged files.
@@ -89,6 +97,6 @@ Only keep them when values are fully synthetic placeholders.
 3. Re-scan staged files.
 
 ## Thorough Mode
-1. Run all three scans on the full repository.
+1. Run all scans on the tracked/publication scope, including hidden agent files.
 2. Review test fixtures, docs, and scripts manually for context leaks.
 3. Re-scan and confirm completion checks.

@@ -1,5 +1,7 @@
 # Project Guidelines
 
+Read [AGENTS.md](../AGENTS.md) first for repository-wide grading, privacy and verification rules. The [documentation map](../docs/README.md) distinguishes current contracts from historical investigations and plans. This file adds transport/parser conventions; keep it consistent with that guide.
+
 ## Deployment
 
 **Production Environment:**
@@ -19,6 +21,9 @@
 - Entry point is `app.js` (Express app, middleware, error handlers, route mounting).
 - API routes are under `routes/api/` and should stay thin: parse request params, call service functions, return JSON.
 - Core logic belongs in `services/kaschuso-api.js` (authentication, cookies, scraping, parsing).
+- Historical navigation, account serialization, bounded caching and semester restoration belong in `services/grade-history.js`; SAL history is explicitly unsupported.
+- The pure `qualification/index.js` engine and versioned `qualification/profiles/` definitions are shared by REST and MCP. Do not duplicate grading formulas in route handlers, MCP adapters or the frontend.
+- OAuth, encrypted connection storage and the seven read-only MCP tools live in `mcp/`. Dashboard bearer tokens and MCP OAuth tokens have distinct authentication paths.
 - Parser behavior is validated with fixtures in `__test__/` and tests in `services/kaschuso-api.test.js`.
 
 ## Authentication Flow (Critical)
@@ -64,15 +69,20 @@ Key insights:
 - In some F5 environments, the `resource_info_v2` endpoint can reset connections; it is opt-in via `SAL_USE_RESOURCE_INFO=false` (default).
 
 ## Build And Test
+- Use Node 24. The committed dependency lockfile is `yarn.lock`.
 - Install dependencies with `yarn install` (or `npm install`).
 - Start server with `yarn start`.
 - Use auto-reload with `yarn dev`.
 - Run tests with `yarn test`.
+- Run `npm run test:mcp` for OAuth, storage, MCP and REST integration checks. Use a dedicated PostgreSQL test database, never production; see [AGENTS.md](../AGENTS.md) for configuration.
+- Run `npm run check:privacy` and `git diff --check` before publication. Use synthetic fixtures for all automated tests and screenshots.
 - Stop local server on port 3001 with `npm run stop`.
 - If `.env` is missing, create it from `.env.default`.
 
 ## Conventions
 - Keep route files minimal and delegate business logic to `services/kaschuso-api.js`.
+- Delegate history orchestration to `services/grade-history.js` and qualification calculations to `qualification/index.js`. Keep missing marks, scenario assumptions and official source marks distinct.
+- Only the source-cited GIBS Solothurn Informatiker EFZ Applikationsentwicklung BiVo 2021 BM1 TALS profile for starts 2021–2025 is implemented. Do not extend its cohort implicitly; follow `docs/qualification-contributing.md`.
 - Prefer `async/await` and preserve existing error propagation (`catch(next)` in routes).
 - Keep API response shapes stable unless explicitly changing contract.
 - Use `/api/meta` for frontend bootstrap metadata (feature flags + effective mandators) rather than hardcoding deployment assumptions.
@@ -89,6 +99,7 @@ Key insights:
 - Cheerio often normalizes `tbody`; prefer selectors that work with inserted table wrappers.
 - Cookie values may contain `=` signs; parse carefully with `indexOf('=')` not `split('=')[1]`.
 - Session cookies may rotate between requests; always merge and forward accumulated cookies.
+- History requests mutate the portal's selected semester. Use the account queue, trust only validated portal catalogue entries, exclude future semesters and restore the original selection even after failures. Never accept arbitrary semester URLs from clients.
 - The homepage `Ihre letzten Noten` table is a separate unconfirmed/latest-uploaded feed and should not be treated as identical to the full grades page semantics.
 - `gymli` lives on `portal.sbl.ch` and may render table detail rows with fewer columns than classic KASCHUSO pages; parser logic must remain resilient to both shapes.
 - Grade pages may include both legacy and modern table structures simultaneously; parser logic should compare both parse results and keep the richer one to avoid dropping subjects.
@@ -117,6 +128,11 @@ Key insights:
 - Authentication endpoint handler (422 failure classification): `routes/api/authenticate.js`
 - Grades endpoint handler: `routes/api/grades.js`
 - API middleware (auth guard, rate limiting, request validation): `routes/api/middleware/`
+- Historical grades and selection restoration: `services/grade-history.js`, `routes/api/grade-history.js`
+- Qualification routes and strict scenario validation: `routes/api/qualification.js`
+- Shared grading engine and versioned profile: `qualification/index.js`, `qualification/profiles/`
+- MCP tool schemas/adapters and common instructions: `mcp/server.mjs`, `mcp/grades.mjs`, `mcp/instructions.mjs`
+- Public client setup and companion interpretation skill: `docs/chatbot-setup.md`, `plugin/skills/interpreting-kaschuso-grades/SKILL.md`
 
 
 - This repository is publicly available on GitHub; never publish secrets, deploy hooks, tokens, credentials, private identifiers, or other privacy-related information in code, docs, tests, commits, or generated content.
@@ -127,4 +143,5 @@ Key insights:
 - `FRONTEND_ORIGIN` may contain a comma-separated allowlist; CORS responses must echo a single matching origin, never a comma-joined value.
 - For local Vite development, support both `http://localhost:5173` and `http://127.0.0.1:5173` where practical.
 - Keep password redaction behavior in request logging intact.
+- Retain no-store responses, account-specific process-memory history caching, safe reconnect classifications and grant-revocation checks after upstream work. Do not store student marks/scenarios in OAuth PostgreSQL storage.
 - Do not commit secrets or real user credentials into code, tests, or docs.

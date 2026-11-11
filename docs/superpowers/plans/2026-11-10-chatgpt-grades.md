@@ -1,5 +1,7 @@
 # ChatGPT grades implementation plan
 
+Historical first-release scope. Current history/qualification contracts and seven-tool behaviour are documented in [the documentation map](../../README.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement isolated, read-only multi-student grade access from ChatGPT, with no real personal data in source, tests, docs, or plugin metadata.

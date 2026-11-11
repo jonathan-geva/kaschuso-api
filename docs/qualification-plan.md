@@ -1,6 +1,6 @@
 # Qualification Planner Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Completed steps use checked boxes.
 
 **Goal:** Add private semester history and source-cited BM/EFZ target planning to the dashboard and MCP.
 
@@ -44,7 +44,7 @@ Files: `qualification/index.js`, `qualification/profiles/gibs-so-informatik-bm-2
 
 Files: frontend `src/features/qualification/*`, dashboard/history integration, API schemas/endpoints/query keys, fixture browser tests.
 - [x] Render fixture-backed semester history, separate BM/BFS averages, BM worksheet target table and EFZ aggregation panel; use the backend response contract.
-- [x] Debounce validated scenarios; avoid persistent student data; preserve partial errors and account clearing.
+- [x] Commit validated grade edits on blur or Enter; avoid persistent student data; preserve partial errors and account clearing.
 - [x] Add synthetic browser coverage for missing/estimated grades, target changes, mobile tables and the discreet chatbot setup panel.
 - [x] Pass lint/build/browser checks.
 

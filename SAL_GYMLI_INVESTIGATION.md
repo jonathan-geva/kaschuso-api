@@ -1,5 +1,7 @@
 # SAL GymLi Integration Investigation
 
+Historical investigation dated 2026-03-25. This is not a current production-health claim. See [current operations](docs/chatgpt-mcp.md) and [documentation map](docs/README.md); historical-semester support is currently limited to the legacy portal.
+
 ## 1. Executive Summary
 
 This document captures the integration state for the `gymli` mandator.
