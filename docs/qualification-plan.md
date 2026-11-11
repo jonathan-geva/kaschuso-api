@@ -61,4 +61,12 @@ Files: protected qualification routes, `mcp/server.mjs`, `mcp/instructions.mjs`,
 - [x] Run backend unit/MCP/security checks and frontend lint/build/browser checks with synthetic data.
 - [x] Perform authorised live history/planner smoke test with no recording or published data; delete private captures.
 - [x] Scan source and diffs for exact private values without echoing matches; review calculation limitations and docs.
-- [ ] Review both branches, fix findings, commit and create/attach coordinated PRs. Preserve production until the authorised release workflow applies.
+- [x] Review both branches, fix findings, commit and create/attach coordinated PRs. Preserve production until the authorised release workflow applies.
+
+## Delivery
+
+Backend: https://github.com/jonathan-geva/kaschuso-api/pull/2
+
+Frontend: https://github.com/jonathan-geva/kaschuso-dashboard/pull/2
+
+Merge/deploy backend first, then frontend; refresh the existing MCP connection afterward.
