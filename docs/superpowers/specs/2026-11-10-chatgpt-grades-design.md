@@ -1,5 +1,7 @@
 # Kaschuso grades in ChatGPT
 
+Historical first-release scope. Current history/qualification contracts and seven-tool behaviour are documented in [the documentation map](../../README.md).
+
 Status: approved for implementation, including removal of identifying personal information from source artifacts. Git attribution and repository account references are the authorized exceptions.
 
 ## Intent and decisions

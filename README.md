@@ -2,9 +2,11 @@
 
 API wrapper for SchulNetz portals (KASCHUSO + SAL).
 
+See the [documentation map](docs/README.md) and [agent guide](AGENTS.md) for current contracts and maintenance guidance.
+
 ## Semester history and qualification planning
 
-The authenticated API now includes `GET /api/grade-history`, `GET /api/qualification` and `POST /api/qualification`. Historical reads restore the original upstream semester; scenario inputs never overwrite school records. BM and BFS semester averages are separate. The first source-cited planner profile covers GIBS Solothurn Informatiker/in EFZ Applikationsentwicklung BiVo2021 with eight-semester, pre-2026 BM1 TALS. Running averages and target scenarios remain provisional; unavailable grades stay empty.
+The authenticated API now includes `GET /api/grade-history`, `GET /api/qualification` and `POST /api/qualification`. Historical reads restore the original upstream semester; scenario inputs never overwrite school records. BM and BFS semester averages are separate. The first source-cited planner profile covers GIBS Solothurn Informatiker/in EFZ Applikationsentwicklung BiVo 2021 with eight-semester, pre-2026 BM1 TALS. Running averages and target scenarios remain provisional; unavailable grades stay empty.
 
 - [Calculation design and API contracts](docs/qualification-design.md)
 - [BM rules, timetable, rounding and cohort research](docs/qualification-research-bm.md)
@@ -131,7 +133,7 @@ KASCHUSO_BASE_URL=https://kaschuso.so.ch/
 SAL_BASE_URL=https://portal.sbl.ch/
 ENABLE_SAL_PORTAL=true
 FRONTEND_ORIGIN=https://app.example.com
-JWT_SECRET=change-me
+# Set JWT_SECRET privately to an independent random secret of at least 32 bytes.
 ```
 
 Local frontend example (Vite):
